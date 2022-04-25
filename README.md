@@ -1,6 +1,6 @@
 # xView2 UI Backend
 
-This is the code for the backend that supports the UI at [https://github.com/louisgv/no-war-pls](https://github.com/louisgv/no-war-pls).
+This is the code for the backend that supports the UI at [https://github.com/plasmo-foss/no-war-pls](https://github.com/plasmo-foss/no-war-pls).
 
 ## Install
 ```
