@@ -45,3 +45,16 @@ async def send_coordinates(coordinate: Coordinate):
     )
 
     return uid
+
+@app.get("/job-status")
+async def job_status(job_id: str):
+    resp = ddb.Table('xview2-ui-inference').get_item(
+        Key={
+            'uid': job_id
+        }
+    )
+
+    if "Item" in resp:
+        return resp["Item"]
+    else:
+        return None
