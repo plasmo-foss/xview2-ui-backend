@@ -2,13 +2,15 @@ import json
 import os
 import uuid
 from decimal import Decimal
-from typing import Optional
 
 import boto3
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
 from schemas import Coordinate
+from utils import order_coordinate
+import requests
+
 
 app = FastAPI()
 
@@ -35,8 +37,16 @@ async def startup_event():
 
 @app.post("/send-coordinates")
 async def send_coordinates(coordinate: Coordinate):
+    # Generate a UID
     uid = uuid.uuid4()
+    
+    # Fix the ordering of the coordinate
+    coordinate = order_coordinate(coordinate)
+
+    # Convert floats to Decimals
     item = json.loads(coordinate.json(), parse_float=Decimal)
+
+    # Insert into DynamoDB
     ddb.Table('xview2-ui-job').put_item(
         Item={
             'uid': str(uid),
@@ -58,3 +68,19 @@ async def job_status(job_id: str):
         return resp["Item"]
     else:
         return None
+
+@app.post("/osm-polygons")
+async def osm_polygons(coordinate: Coordinate):
+    # Fix the ordering of the coordinate
+    coordinate = order_coordinate(coordinate)
+    # Needs to be south west north east -> end_lat start_lon start_lat end_lon
+
+    BASE_URL = "https://www.overpass-api.de/api/interpreter"
+    bounding_box = f"{coordinate.end_lat},{coordinate.start_lon},{coordinate.start_lat},{coordinate.end_lon}"
+    params = f"data=[out:json];way[building=yes]({bounding_box});convert%20item%20::=::,::geom=geom(),_osm_type=type();out%20geom;"
+
+    r = requests.get(BASE_URL, params=params)
+
+    return r.json()
+
+
