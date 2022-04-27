@@ -86,6 +86,5 @@ async def osm_polygons(coordinate: Coordinate):
         return None
 
     return osm_geom_to_poly_geojson(data)
-    # TODO convert this response to GeoJSON with Polygons
 
 
