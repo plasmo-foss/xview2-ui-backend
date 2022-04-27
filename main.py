@@ -6,31 +6,43 @@ from decimal import Decimal
 import boto3
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 
 from schemas import Coordinate
 from utils import order_coordinate, osm_geom_to_poly_geojson
 import requests
 
 
-app = FastAPI()
+app = FastAPI(
+    title="xView Vulcan Backend",
+    description="The Python backend supporting the xView Vulcan BDA frontend",
+    version="0.0.1",
+    license_info={
+        "name": "MIT",
+        "url": "https://github.com/plasmo-foss/xview2-ui-backend/blob/main/LICENSE"
+    }
+)
 
 client = None
 ddb = None
+
 
 @app.on_event("startup")
 async def startup_event():
     global ddb
 
     conf = load_dotenv()
-    client = boto3.client('dynamodb',
-                         region_name=os.getenv('DB_REGION_NAME'),
-                         aws_access_key_id=os.getenv('DB_ACCESS_KEY_ID'),
-                         aws_secret_access_key=os.getenv('DB_SECRET_ACCESS_KEY')
+    client = boto3.client(
+        "dynamodb",
+        region_name=os.getenv("DB_REGION_NAME"),
+        aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
     )
-    ddb = boto3.resource('dynamodb',
-                         region_name=os.getenv('DB_REGION_NAME'),
-                         aws_access_key_id=os.getenv('DB_ACCESS_KEY_ID'),
-                         aws_secret_access_key=os.getenv('DB_SECRET_ACCESS_KEY')
+    ddb = boto3.resource(
+        "dynamodb",
+        region_name=os.getenv("DB_REGION_NAME"),
+        aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
     )
     ddb_exceptions = client.exceptions
 
@@ -39,7 +51,7 @@ async def startup_event():
 async def send_coordinates(coordinate: Coordinate):
     # Generate a UID
     uid = uuid.uuid4()
-    
+
     # Fix the ordering of the coordinate
     coordinate = order_coordinate(coordinate)
 
@@ -47,30 +59,32 @@ async def send_coordinates(coordinate: Coordinate):
     item = json.loads(coordinate.json(), parse_float=Decimal)
 
     # Insert into DynamoDB
-    ddb.Table('xview2-ui-job').put_item(
-        Item={
-            'uid': str(uid),
-            **item
-        }
-    )
+    ddb.Table("xview2-ui-job").put_item(Item={"uid": str(uid), **item})
 
     return uid
 
+
 @app.get("/job-status")
 async def job_status(job_id: str):
-    resp = ddb.Table('xview2-ui-inference').get_item(
-        Key={
-            'uid': job_id
-        }
-    )
+    resp = ddb.Table("xview2-ui-inference").get_item(Key={"uid": job_id})
 
     if "Item" in resp:
         return resp["Item"]
     else:
         return None
 
+
 @app.post("/osm-polygons")
 async def osm_polygons(coordinate: Coordinate):
+    """
+    Returns GeoJSON for all building polygons for a given bounding box from OSM.
+
+        Parameters:
+            coordinate (Coordinate): A set of bounding box coordinates
+
+        Returns:
+            osm_geojson (dict): The FeatureCollection representing all building polygons for the bounding box
+    """
     # Fix the ordering of the coordinate
     coordinate = order_coordinate(coordinate)
     # Needs to be south west north east -> end_lat start_lon start_lat end_lon
@@ -85,6 +99,5 @@ async def osm_polygons(coordinate: Coordinate):
     if len(data["elements"]) == 0:
         return None
 
-    return osm_geom_to_poly_geojson(data)
-
-
+    osm_geojson = osm_geom_to_poly_geojson(data)
+    return osm_geojson
