@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
-from schemas import Coordinate
+from schemas import Coordinate, JobId
 from utils import order_coordinate, osm_geom_to_poly_geojson
 import requests
 
@@ -66,7 +66,7 @@ async def send_coordinates(coordinate: Coordinate):
 
 
 @app.get("/job-status")
-async def job_status(job_id: str):
+async def job_status(job_id: JobId):
     resp = ddb.Table("xview2-ui-inference").get_item(Key={"uid": job_id})
 
     if "Item" in resp:
@@ -76,7 +76,7 @@ async def job_status(job_id: str):
 
 
 @app.post("/search-osm-polygons")
-async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[str] = None):
+async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[JobId] = None):
     """
     Returns GeoJSON for all building polygons for a given bounding box from OSM.
 
@@ -104,7 +104,9 @@ async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[str] = No
     osm_geojson = osm_geom_to_poly_geojson(data)
 
     if job_id:
+        # Convert floats to Decimals
         item = json.loads(json.dumps(osm_geojson), parse_float=Decimal)
+
         ddb.Table("xview2-ui-osm-polys").put_item(
             Item={"uid": str(job_id), "geojson": item}
         )
@@ -113,7 +115,7 @@ async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[str] = No
 
 
 @app.get("/fetch-osm-polygons")
-async def fetch_osm_polygons(job_id: str):
+async def fetch_osm_polygons(job_id: JobId):
     """
     Returns GeoJSON for a Job ID that exists in DynamoDB.
 

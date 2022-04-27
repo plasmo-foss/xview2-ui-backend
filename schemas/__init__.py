@@ -1,9 +1,10 @@
 """Schemas"""
 
-from .coordinate import Coordinate
+from .coordinate import Coordinate, JobId
 
 __all__ = (
     "Coordinate",
+    "JobId"
 )
 
 # https://stackoverflow.com/questions/40018681
