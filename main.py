@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 
 from schemas import Coordinate
-from utils import order_coordinate
+from utils import order_coordinate, osm_geom_to_poly_geojson
 import requests
 
 
@@ -81,6 +81,11 @@ async def osm_polygons(coordinate: Coordinate):
 
     r = requests.get(BASE_URL, params=params)
 
-    return r.json()
+    data = r.json()
+    if len(data["elements"]) == 0:
+        return None
+
+    return osm_geom_to_poly_geojson(data)
+    # TODO convert this response to GeoJSON with Polygons
 
 
