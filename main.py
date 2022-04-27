@@ -1,5 +1,6 @@
 import json
 import os
+from plistlib import UID
 import uuid
 from decimal import Decimal
 
@@ -8,11 +9,11 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
-from schemas import Coordinate, JobId
+from schemas import Coordinate, OsmGeoJson
 from utils import order_coordinate, osm_geom_to_poly_geojson
 import requests
 
-from typing import Optional
+from typing import Optional, Dict, Union
 
 app = FastAPI(
     title="xView Vulcan Backend",
@@ -66,7 +67,7 @@ async def send_coordinates(coordinate: Coordinate):
 
 
 @app.get("/job-status")
-async def job_status(job_id: JobId):
+async def job_status(job_id: str):
     resp = ddb.Table("xview2-ui-inference").get_item(Key={"uid": job_id})
 
     if "Item" in resp:
@@ -75,8 +76,8 @@ async def job_status(job_id: JobId):
         return None
 
 
-@app.post("/search-osm-polygons")
-async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[JobId] = None):
+@app.post("/search-osm-polygons", response_model=OsmGeoJson)
+async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[str]=None):
     """
     Returns GeoJSON for all building polygons for a given bounding box from OSM.
 
@@ -114,8 +115,8 @@ async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[JobId] = 
     return osm_geojson
 
 
-@app.get("/fetch-osm-polygons")
-async def fetch_osm_polygons(job_id: JobId):
+@app.get("/fetch-osm-polygons", response_model=OsmGeoJson)
+async def fetch_osm_polygons(job_id: str):
     """
     Returns GeoJSON for a Job ID that exists in DynamoDB.
 
@@ -131,3 +132,14 @@ async def fetch_osm_polygons(job_id: JobId):
         return resp["Item"]
     else:
         return None
+
+
+# TODO
+# 1. User presses submit on the UI -> coordinates sent to backend ✅
+# 1A. Fetch OSM polygons for given coordinates ✅
+# 2. Fetch variety of imagery from Maxar/Planet APIs
+# 3. Send imagery to UI.
+# 4. User selects pre and post image and submits.
+# 5. Launch the AI inference.
+# 6. Once 1A and 5 are done, clip the AI polygons with the OSM polygons
+# 7. Return the GeoJSON to the UI for rendering

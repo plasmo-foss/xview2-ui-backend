@@ -1,10 +1,11 @@
 """Schemas"""
 
-from .coordinate import Coordinate, JobId
+from .coordinate import Coordinate
+from .osmgeojson import OsmGeoJson
 
 __all__ = (
     "Coordinate",
-    "JobId"
+    "OsmGeoJson"
 )
 
 # https://stackoverflow.com/questions/40018681
