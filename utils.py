@@ -26,4 +26,4 @@ def osm_geom_to_poly_geojson(osm_data: dict):
         polys.append(orient(shape(geom)))
 
     # Return GeoJSON
-    return gpd.GeoSeries(polys)
+    return gpd.GeoSeries(polys).__geo_interface__

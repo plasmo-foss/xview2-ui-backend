@@ -12,6 +12,7 @@ from schemas import Coordinate
 from utils import order_coordinate, osm_geom_to_poly_geojson
 import requests
 
+from typing import Optional
 
 app = FastAPI(
     title="xView Vulcan Backend",
@@ -19,8 +20,8 @@ app = FastAPI(
     version="0.0.1",
     license_info={
         "name": "MIT",
-        "url": "https://github.com/plasmo-foss/xview2-ui-backend/blob/main/LICENSE"
-    }
+        "url": "https://github.com/plasmo-foss/xview2-ui-backend/blob/main/LICENSE",
+    },
 )
 
 client = None
@@ -74,13 +75,14 @@ async def job_status(job_id: str):
         return None
 
 
-@app.post("/osm-polygons")
-async def osm_polygons(coordinate: Coordinate):
+@app.post("/search-osm-polygons")
+async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[str] = None):
     """
     Returns GeoJSON for all building polygons for a given bounding box from OSM.
 
         Parameters:
             coordinate (Coordinate): A set of bounding box coordinates
+            job_id (str, optional): The Job ID string to persist the GeoJSON to
 
         Returns:
             osm_geojson (dict): The FeatureCollection representing all building polygons for the bounding box
@@ -100,4 +102,30 @@ async def osm_polygons(coordinate: Coordinate):
         return None
 
     osm_geojson = osm_geom_to_poly_geojson(data)
+
+    if job_id:
+        item = json.loads(json.dumps(osm_geojson), parse_float=Decimal)
+        ddb.Table("xview2-ui-osm-polys").put_item(
+            Item={"uid": str(job_id), "geojson": item}
+        )
+
     return osm_geojson
+
+
+@app.get("/fetch-osm-polygons")
+async def fetch_osm_polygons(job_id: str):
+    """
+    Returns GeoJSON for a Job ID that exists in DynamoDB.
+
+        Parameters:
+            job_id (str): Job ID for a task
+
+        Returns:
+            osm_geojson (dict): The FeatureCollection representing all building polygons for the bounding box
+    """
+    resp = ddb.Table("xview2-ui-osm-polys").get_item(Key={"uid": job_id})
+
+    if "Item" in resp:
+        return resp["Item"]
+    else:
+        return None
