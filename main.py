@@ -76,7 +76,7 @@ async def job_status(job_id: str):
         return None
 
 
-@app.post("/search-osm-polygons", response_model=OsmGeoJson)
+@app.post("/search-osm-polygons")
 async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[str]=None):
     """
     Returns GeoJSON for all building polygons for a given bounding box from OSM.
@@ -94,7 +94,7 @@ async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[str]=None
 
     BASE_URL = "https://www.overpass-api.de/api/interpreter"
     bounding_box = f"{coordinate.end_lat},{coordinate.start_lon},{coordinate.start_lat},{coordinate.end_lon}"
-    params = f"data=[out:json];way[building=yes]({bounding_box});convert%20item%20::=::,::geom=geom(),_osm_type=type();out%20geom;"
+    params = f"data=[out:json];(way[building]({bounding_box});relation[building]({bounding_box}););out%20geom;"
 
     r = requests.get(BASE_URL, params=params)
 
