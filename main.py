@@ -66,6 +66,7 @@ async def send_coordinates(coordinate: Coordinate) -> str:
 
     # Insert into DynamoDB
     ddb.Table("xview2-ui-job").put_item(Item={"uid": str(uid), **item})
+    ddb.Table("xview2-ui-status").put_item(Item={"uid": str(uid), "status": "waiting_imagery"})
 
     return uid
 
@@ -88,7 +89,7 @@ async def fetch_coordinates(job_id: str) -> Coordinate:
 
 @app.get("/job-status")
 async def job_status(job_id: str) -> Dict:
-    resp = ddb.Table("xview2-ui-inference").get_item(Key={"uid": job_id})
+    resp = ddb.Table("xview2-ui-status").get_item(Key={"uid": job_id})
 
     if "Item" in resp:
         return resp["Item"]
@@ -177,14 +178,28 @@ async def fetch_planet_imagery(job_id: str, current_date: str) -> List[Dict]:
             }
         )
 
-    ret_dynamo = [json.loads(json.dumps(i), parse_float=Decimal) for i in ret]
-
+    # Persist the response to DynamoDB
     ddb.Table("xview2-ui-planet-api").put_item(
-        Item={"uid": str(job_id), "planet_response": ret_dynamo}
+        Item={"uid": str(job_id), "planet_response": ret}
+    )
+    
+    # Update job status
+    ddb.Table("xview2-ui-status").put_item(
+        Item={"uid": str(job_id), "status": "waiting_assessment"}
     )
 
     return ret
 
+
+@app.post("/launch-assessment")
+async def launch_assessment(job_id: str):
+    # TODO run assessment
+    return
+
+    # Update job status
+    ddb.Table("xview2-ui-status").put_item(
+        Item={"uid": str(job_id), "status": "running_assessment"}
+    )
 
 # TODO
 # 1. User presses submit on the UI -> coordinates sent to backend ✅
