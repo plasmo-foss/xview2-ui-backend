@@ -1,19 +1,23 @@
 import json
 import os
-from plistlib import UID
 import uuid
 from decimal import Decimal
 
 import boto3
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from fastapi.openapi.utils import get_openapi
 
 from schemas import Coordinate, OsmGeoJson
-from utils import order_coordinate, osm_geom_to_poly_geojson
+from utils import (
+    create_bounding_box_poly,
+    get_planet_imagery,
+    order_coordinate,
+    osm_geom_to_poly_geojson,
+)
 import requests
+import planet
 
-from typing import Optional, Dict, Union
+from typing import Optional, Dict, List
 
 app = FastAPI(
     title="xView Vulcan Backend",
@@ -50,7 +54,7 @@ async def startup_event():
 
 
 @app.post("/send-coordinates")
-async def send_coordinates(coordinate: Coordinate):
+async def send_coordinates(coordinate: Coordinate) -> str:
     # Generate a UID
     uid = uuid.uuid4()
 
@@ -66,8 +70,24 @@ async def send_coordinates(coordinate: Coordinate):
     return uid
 
 
+@app.get("/fetch-coordinates", response_model=Coordinate)
+async def fetch_coordinates(job_id: str) -> Coordinate:
+    resp = ddb.Table("xview2-ui-job").get_item(Key={"uid": job_id})
+
+    if "Item" in resp:
+        ret = resp["Item"]
+        return Coordinate(
+            start_lon=ret["start_lon"],
+            start_lat=ret["start_lat"],
+            end_lon=ret["end_lon"],
+            end_lat=ret["end_lat"],
+        )
+    else:
+        return None
+
+
 @app.get("/job-status")
-async def job_status(job_id: str):
+async def job_status(job_id: str) -> Dict:
     resp = ddb.Table("xview2-ui-inference").get_item(Key={"uid": job_id})
 
     if "Item" in resp:
@@ -76,8 +96,10 @@ async def job_status(job_id: str):
         return None
 
 
-@app.post("/search-osm-polygons")
-async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[str]=None):
+@app.post("/search-osm-polygons", response_model=dict)
+async def search_osm_polygons(
+    coordinate: Coordinate, job_id: Optional[str] = None
+) -> Dict:
     """
     Returns GeoJSON for all building polygons for a given bounding box from OSM.
 
@@ -102,7 +124,7 @@ async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[str]=None
     if len(data["elements"]) == 0:
         return None
 
-    osm_geojson = osm_geom_to_poly_geojson(data)
+    osm_geojson = json.loads(osm_geom_to_poly_geojson(data))
 
     if job_id:
         # Convert floats to Decimals
@@ -116,7 +138,7 @@ async def search_osm_polygons(coordinate: Coordinate, job_id: Optional[str]=None
 
 
 @app.get("/fetch-osm-polygons", response_model=OsmGeoJson)
-async def fetch_osm_polygons(job_id: str):
+async def fetch_osm_polygons(job_id: str) -> Dict:
     """
     Returns GeoJSON for a Job ID that exists in DynamoDB.
 
@@ -134,11 +156,35 @@ async def fetch_osm_polygons(job_id: str):
         return None
 
 
+@app.post("/fetch-planet-imagery")
+async def fetch_planet_imagery(job_id: str, current_date: str) -> List[Dict]:
+    # Get the coordinates for the job from DynamoDB
+    coords = await fetch_coordinates(job_id)
+
+    # Convery the coordinates to a Shapely polygon
+    bounding_box = create_bounding_box_poly(coords)
+
+    client = planet.api.ClientV1(os.getenv("PLANET_API_KEY"))
+    imagery_list = get_planet_imagery(client, bounding_box, current_date)
+
+    ret = []
+    for image in imagery_list:
+        ret.append(
+            {
+                "image_id": image["image_id"],
+                "timestamp": image["timestamp"],
+                "data": f"https://tiles1.planet.com/data/v1/SkySatCollect/{image['image_id']}/{{z}}/{{x}}/{{y}}.png?api_key=",
+            }
+        )
+
+    return ret
+
+
 # TODO
 # 1. User presses submit on the UI -> coordinates sent to backend ✅
 # 1A. Fetch OSM polygons for given coordinates ✅
-# 2. Fetch variety of imagery from Maxar/Planet APIs
-# 3. Send imagery to UI.
+# 2. Fetch variety of imagery from Maxar/Planet APIs ✅
+# 3. Send imagery to UI. ✅
 # 4. User selects pre and post image and submits.
 # 5. Launch the AI inference.
 # 6. Once 1A and 5 are done, clip the AI polygons with the OSM polygons
