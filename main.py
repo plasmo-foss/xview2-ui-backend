@@ -177,6 +177,12 @@ async def fetch_planet_imagery(job_id: str, current_date: str) -> List[Dict]:
             }
         )
 
+    ret_dynamo = [json.loads(json.dumps(i), parse_float=Decimal) for i in ret]
+
+    ddb.Table("xview2-ui-planet-api").put_item(
+        Item={"uid": str(job_id), "planet_response": ret_dynamo}
+    )
+
     return ret
 
 
