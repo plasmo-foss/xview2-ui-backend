@@ -121,6 +121,8 @@ celerybeat.pid
 
 # Environments
 .env*
+!.env.template
+!.env.access_keys.template
 .venv
 env/
 venv/
