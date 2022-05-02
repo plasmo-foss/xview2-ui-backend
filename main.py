@@ -76,7 +76,7 @@ async def send_coordinates(coordinate: Coordinate, access_key: str = Header("nul
     item = json.loads(coordinate.json(), parse_float=Decimal)
 
     # Insert into DynamoDB
-    ddb.Table("xview2-ui-job").put_item(Item={"uid": str(uid), **item})
+    ddb.Table("xview2-ui-coordinates").put_item(Item={"uid": str(uid), **item})
     ddb.Table("xview2-ui-status").put_item(Item={"uid": str(uid), "status": "waiting_imagery"})
 
     return uid
@@ -89,7 +89,7 @@ async def fetch_coordinates(job_id: str, access_key: str = Header("null")) -> Co
     if not access_validated:
         raise HTTPException(status_code=401, detail="Please provide a valid access_key")
 
-    resp = ddb.Table("xview2-ui-job").get_item(Key={"uid": job_id})
+    resp = ddb.Table("xview2-ui-coordinates").get_item(Key={"uid": job_id})
 
     if "Item" in resp:
         ret = resp["Item"]
