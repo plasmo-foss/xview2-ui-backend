@@ -7,7 +7,7 @@ import boto3
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from schemas import Coordinate, OsmGeoJson
+from schemas import Coordinate, OsmGeoJson, Planet
 from utils import (
     create_bounding_box_poly,
     get_planet_imagery,
@@ -97,7 +97,7 @@ async def job_status(job_id: str) -> Dict:
         return None
 
 
-@app.post("/search-osm-polygons", response_model=dict)
+@app.post("/search-osm-polygons", response_model=OsmGeoJson)
 async def search_osm_polygons(
     coordinate: Coordinate, job_id: Optional[str] = None
 ) -> Dict:
@@ -135,7 +135,7 @@ async def search_osm_polygons(
             Item={"uid": str(job_id), "geojson": item}
         )
 
-    return osm_geojson
+    return OsmGeoJson(uid=job_id, geojson=osm_geojson)
 
 
 @app.get("/fetch-osm-polygons", response_model=OsmGeoJson)
@@ -157,7 +157,7 @@ async def fetch_osm_polygons(job_id: str) -> Dict:
         return None
 
 
-@app.post("/fetch-planet-imagery")
+@app.post("/fetch-planet-imagery", response_model=Planet)
 async def fetch_planet_imagery(job_id: str, current_date: str) -> List[Dict]:
     # Get the coordinates for the job from DynamoDB
     coords = await fetch_coordinates(job_id)
@@ -188,7 +188,7 @@ async def fetch_planet_imagery(job_id: str, current_date: str) -> List[Dict]:
         Item={"uid": str(job_id), "status": "waiting_assessment"}
     )
 
-    return ret
+    return Planet(uid=job_id, images=ret)
 
 
 @app.post("/launch-assessment")

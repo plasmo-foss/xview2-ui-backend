@@ -2,10 +2,12 @@
 
 from .coordinate import Coordinate
 from .osmgeojson import OsmGeoJson
+from .planet import Planet
 
 __all__ = (
     "Coordinate",
-    "OsmGeoJson"
+    "OsmGeoJson",
+    "Planet"
 )
 
 # https://stackoverflow.com/questions/40018681
