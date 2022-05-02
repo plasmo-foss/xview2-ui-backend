@@ -172,9 +172,9 @@ async def fetch_planet_imagery(job_id: str, current_date: str) -> List[Dict]:
     for image in imagery_list:
         ret.append(
             {
-                "image_id": image["image_id"],
                 "timestamp": image["timestamp"],
-                "data": f"https://tiles1.planet.com/data/v1/SkySatCollect/{image['image_id']}/{{z}}/{{x}}/{{y}}.png?api_key=",
+                "item_type": "SkySatCollect",
+                "item_id": image["image_id"]
             }
         )
 
