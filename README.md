@@ -8,6 +8,8 @@ pip install "fastapi[all]"
 conda install boto3
 ```
 
+You need a file named `.env` containing AWS and Planet API credentials and a file named `.env.access_keys`. Ask the group for these files.
+
 ## Running
 ```
 sudo /home/ubuntu/miniconda3/envs/xview2-ui-backend/bin/uvicorn main:app --reload --port 80 --host 0.0.0.0
