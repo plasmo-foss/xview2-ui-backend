@@ -21,7 +21,7 @@ from typing import Optional, Dict, List, Union
 import secrets
 
 
-def verify_key(access_key: str) -> bool:
+def verify_key(access_key: str = Header("null")) -> bool:
     if not access_key in access_keys:
         raise HTTPException(status_code=401, detail="Please provide a valid access_key")
     return True
