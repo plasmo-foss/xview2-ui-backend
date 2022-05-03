@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import boto3
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Depends
 
 from schemas import Coordinate, OsmGeoJson, Planet
 from utils import (
@@ -20,6 +20,13 @@ import planet
 from typing import Optional, Dict, List, Union
 import secrets
 
+
+def verify_key(access_key: str = Header("null")) -> bool:
+    if not access_key in access_keys:
+        raise HTTPException(status_code=401, detail="Please provide a valid access_key")
+    return True
+
+
 app = FastAPI(
     title="xView Vulcan Backend",
     description="The Python backend supporting the xView Vulcan BDA frontend",
@@ -28,6 +35,7 @@ app = FastAPI(
         "name": "MIT",
         "url": "https://github.com/plasmo-foss/xview2-ui-backend/blob/main/LICENSE",
     },
+    dependencies=[Depends(verify_key)],
 )
 
 client = None
@@ -55,16 +63,11 @@ async def startup_event():
     )
     ddb_exceptions = client.exceptions
 
-    access_keys = set(open(".env.access_keys", "r").readlines())
-
+    access_keys = set([key.strip() for key in open(".env.access_keys", "r").readlines()])
 
 
 @app.post("/send-coordinates")
-async def send_coordinates(coordinate: Coordinate, access_key: str = Header("null")) -> str:
-    # Validate that the caller passed the correct access_key
-    access_validated = access_key in access_keys
-    if not access_validated:
-        raise HTTPException(status_code=401, detail="Please provide a valid access_key")
+async def send_coordinates(coordinate: Coordinate) -> str:
 
     # Generate a UID
     uid = uuid.uuid4()
@@ -83,11 +86,7 @@ async def send_coordinates(coordinate: Coordinate, access_key: str = Header("nul
 
 
 @app.get("/fetch-coordinates", response_model=Coordinate)
-async def fetch_coordinates(job_id: str, access_key: str = Header("null")) -> Coordinate:
-    # Validate that the caller passed the correct access_key
-    access_validated = access_key in access_keys
-    if not access_validated:
-        raise HTTPException(status_code=401, detail="Please provide a valid access_key")
+async def fetch_coordinates(job_id: str) -> Coordinate:
 
     resp = ddb.Table("xview2-ui-coordinates").get_item(Key={"uid": job_id})
 
@@ -104,12 +103,8 @@ async def fetch_coordinates(job_id: str, access_key: str = Header("null")) -> Co
 
 
 @app.get("/job-status")
-async def job_status(job_id: str, access_key: str = Header("null")) -> Dict:
-    # Validate that the caller passed the correct access_key
-    access_validated = access_key in access_keys
-    if not access_validated:
-        raise HTTPException(status_code=401, detail="Please provide a valid access_key")
-
+async def job_status(job_id: str) -> Dict:
+    
     resp = ddb.Table("xview2-ui-status").get_item(Key={"uid": job_id})
 
     if "Item" in resp:
@@ -120,7 +115,7 @@ async def job_status(job_id: str, access_key: str = Header("null")) -> Dict:
 
 @app.post("/search-osm-polygons", response_model=OsmGeoJson)
 async def search_osm_polygons(
-    coordinate: Coordinate, access_key: str = Header("null"), job_id: Optional[str] = None
+    coordinate: Coordinate, job_id: Optional[str] = None
 ) -> Dict:
     """
     Returns GeoJSON for all building polygons for a given bounding box from OSM.
@@ -132,11 +127,6 @@ async def search_osm_polygons(
         Returns:
             osm_geojson (dict): The FeatureCollection representing all building polygons for the bounding box
     """
-    # Validate that the caller passed the correct access_key
-    access_validated = access_key in access_keys
-    if not access_validated:
-        raise HTTPException(status_code=401, detail="Please provide a valid access_key")
-
     # Fix the ordering of the coordinate
     coordinate = order_coordinate(coordinate)
     # Needs to be south west north east -> end_lat start_lon start_lat end_lon
@@ -165,7 +155,7 @@ async def search_osm_polygons(
 
 
 @app.get("/fetch-osm-polygons", response_model=OsmGeoJson)
-async def fetch_osm_polygons(job_id: str, access_key: str = Header("null")) -> Dict:
+async def fetch_osm_polygons(job_id: str) -> Dict:
     """
     Returns GeoJSON for a Job ID that exists in DynamoDB.
 
@@ -175,11 +165,6 @@ async def fetch_osm_polygons(job_id: str, access_key: str = Header("null")) -> D
         Returns:
             osm_geojson (dict): The FeatureCollection representing all building polygons for the bounding box
     """
-    # Validate that the caller passed the correct access_key
-    access_validated = access_key in access_keys
-    if not access_validated:
-        raise HTTPException(status_code=401, detail="Please provide a valid access_key")
-
     resp = ddb.Table("xview2-ui-osm-polys").get_item(Key={"uid": job_id})
 
     if "Item" in resp:
@@ -189,12 +174,7 @@ async def fetch_osm_polygons(job_id: str, access_key: str = Header("null")) -> D
 
 
 @app.post("/fetch-planet-imagery", response_model=Planet)
-async def fetch_planet_imagery(current_date: str, access_key: str = Header("null"), job_id: Optional[str] = None) -> List[Dict]:
-    # Validate that the caller passed the correct access_key
-    access_validated = access_key in access_keys
-    if not access_validated:
-        raise HTTPException(status_code=401, detail="Please provide a valid access_key")
-
+async def fetch_planet_imagery(current_date: str, job_id: Optional[str] = None) -> List[Dict]:
     # Get the coordinates for the job from DynamoDB
     coords = await fetch_coordinates(job_id)
 
@@ -228,11 +208,7 @@ async def fetch_planet_imagery(current_date: str, access_key: str = Header("null
 
 
 @app.post("/launch-assessment")
-async def launch_assessment(job_id: str, access_key: str = Header("null")):
-    # Validate that the caller passed the correct access_key
-    access_validated = access_key in access_keys
-    if not access_validated:
-        raise HTTPException(status_code=401, detail="Please provide a valid access_key")
+async def launch_assessment(job_id: str):
 
     # TODO run assessment
     return
@@ -241,6 +217,7 @@ async def launch_assessment(job_id: str, access_key: str = Header("null")):
     ddb.Table("xview2-ui-status").put_item(
         Item={"uid": str(job_id), "status": "running_assessment"}
     )
+
 
 # TODO
 # 1. User presses submit on the UI -> coordinates sent to backend ✅
