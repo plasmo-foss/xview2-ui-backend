@@ -191,7 +191,7 @@ async def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
 
     client = planet.api.ClientV1(os.getenv("PLANET_API_KEY"))
     if body.current_date is None:
-        body.current_date = datetime.now()
+        body.current_date = datetime.now().isoformat()
     imagery_list = get_planet_imagery(client, bounding_box, body.current_date)
 
     ret = []
