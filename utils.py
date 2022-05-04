@@ -98,5 +98,5 @@ def get_planet_imagery(client: ClientV1, geom: Polygon, current_date: str) -> di
 
     # items_iter returns an iterator over API response pages
     return [
-        {"image_id": i["id"], "timestamp": i["properties"]["published"]} for i in items
+        {"image_id": i["id"], "timestamp": i["properties"]["published"], "asset": i} for i in items
     ]
