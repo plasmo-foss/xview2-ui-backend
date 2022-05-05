@@ -225,7 +225,11 @@ async def launch_assessment(body: LaunchAssessment):
 
     # Persist the response to DynamoDB
     ddb.Table("xview2-ui-selected-imagery").put_item(
-        Item={"uid": body.job_id, "pre_image_id": body.pre_image_id, "post_image_id": body.post_image_id}
+        Item={
+            "uid": body.job_id,
+            "pre_image_id": body.pre_image_id,
+            "post_image_id": body.post_image_id,
+        }
     )
 
     # TODO run assessment
