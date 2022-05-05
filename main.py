@@ -13,6 +13,7 @@ from schemas import (
     Planet,
     SearchOsmPolygons,
     FetchPlanetImagery,
+    LaunchAssessment,
 )
 from utils import (
     create_bounding_box_poly,
@@ -220,9 +221,20 @@ async def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
 
 
 @app.post("/launch-assessment")
-async def launch_assessment(job_id: str, pre_image: str, post_image: str):
+async def launch_assessment(body: LaunchAssessment):
+
+    # Persist the response to DynamoDB
+    ddb.Table("xview2-ui-selected-imagery").put_item(
+        Item={"uid": body.job_id, "pre_image_id": body.pre_image_id, "post_image_id": body.post_image_id}
+    )
 
     # TODO run assessment
+
+    # Update job status
+    ddb.Table("xview2-ui-status").put_item(
+        Item={"uid": str(body.job_id), "status": "running_assessment"}
+    )
+
     return
 
     # Update job status

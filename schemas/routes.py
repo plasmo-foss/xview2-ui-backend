@@ -19,3 +19,9 @@ class SearchOsmPolygons(BaseModel):
 class FetchPlanetImagery(BaseModel):
     current_date: Optional[str] = Field(None, example="2022-04-04T11:57:06Z")
     job_id: Optional[str] = Field(None, example="73a42ed6-901b-4d08-9776-f548620e94ea")
+
+
+class LaunchAssessment(BaseModel):
+    job_id: str = Field(None, example="73a42ed6-901b-4d08-9776-f548620e94ea")
+    pre_image_id: str = Field(None, example="20220504_054637_ssc19_u0001")
+    post_image_id: str = Field(None, example="20220407_120032_ssc6_u0001")
