@@ -3,14 +3,15 @@
 from .coordinate import Coordinate
 from .osmgeojson import OsmGeoJson
 from .planet import Planet
-from .routes import SearchOsmPolygons, FetchPlanetImagery
+from .routes import SearchOsmPolygons, FetchPlanetImagery, LaunchAssessment
 
 __all__ = (
     "Coordinate",
     "OsmGeoJson",
     "Planet",
     "SearchOsmPolygons",
-    "FetchPlanetImagery"
+    "FetchPlanetImagery",
+    "LaunchAssessment"
 )
 
 # https://stackoverflow.com/questions/40018681

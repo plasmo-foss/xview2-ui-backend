@@ -86,7 +86,7 @@ def get_planet_imagery(client: ClientV1, geom: Polygon, current_date: str) -> di
     query = api.filters.and_filter(
         api.filters.geom_filter(mapping(geom)),
         api.filters.date_range("acquired", gte=start_date, lte=end_date),
-        api.filters.range_filter("cloud_cover", lte=0.5),
+        api.filters.range_filter("cloud_cover", lte=0.2),
         api.filters.permission_filter("assets.ortho_pansharpened:download"),
         api.filters.string_filter("quality_category", "standard"),
     )
