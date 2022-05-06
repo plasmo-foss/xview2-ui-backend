@@ -1,31 +1,32 @@
 import json
 import os
 import uuid
+from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
+from typing import Dict, List
 
 import boto3
+import planet
+import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import Depends, FastAPI, Header, HTTPException
 
 from schemas import (
     Coordinate,
+    FetchPlanetImagery,
+    LaunchAssessment,
     OsmGeoJson,
     Planet,
     SearchOsmPolygons,
-    FetchPlanetImagery,
-    LaunchAssessment,
 )
+from tileserverdownloader import Converter
 from utils import (
     create_bounding_box_poly,
     get_planet_imagery,
     order_coordinate,
     osm_geom_to_poly_geojson,
 )
-import requests
-import planet
-
-from typing import Dict, List
-from datetime import datetime
 
 
 def verify_key(access_key: str = Header("null")) -> bool:
@@ -232,6 +233,25 @@ async def launch_assessment(body: LaunchAssessment):
         }
     )
 
+    # Download the images for given job
+    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.pre_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
+    coords = await fetch_coordinates(body.job_id)
+    converter = Converter(
+        Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
+        Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
+        coords,
+        18,
+        body.job_id
+    )
+    converter.convert(
+        url
+    )
+
+    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.post_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
+    coords = await fetch_coordinates(body.job_id)
+    converter.convert(
+        url
+    )
     # TODO run assessment
 
     # Update job status
