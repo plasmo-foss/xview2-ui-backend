@@ -244,13 +244,15 @@ async def launch_assessment(body: LaunchAssessment):
         body.job_id
     )
     converter.convert(
-        url
+        url,
+        "pre"
     )
 
     url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.post_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
     coords = await fetch_coordinates(body.job_id)
     converter.convert(
-        url
+        url,
+        "post"
     )
     # TODO run assessment
 
