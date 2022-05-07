@@ -20,12 +20,13 @@ from schemas import (
     Planet,
     SearchOsmPolygons,
 )
-from tileserverdownloader import Converter
 from utils import (
     create_bounding_box_poly,
     get_planet_imagery,
     order_coordinate,
     osm_geom_to_poly_geojson,
+    download_planet_imagery,
+    Converter
 )
 
 
@@ -98,7 +99,7 @@ async def send_coordinates(coordinate: Coordinate) -> str:
 
 
 @app.get("/fetch-coordinates", response_model=Coordinate)
-async def fetch_coordinates(job_id: str) -> Coordinate:
+def fetch_coordinates(job_id: str) -> Coordinate:
 
     resp = ddb.Table("xview2-ui-coordinates").get_item(Key={"uid": job_id})
 
@@ -126,7 +127,7 @@ async def job_status(job_id: str) -> Dict:
 
 
 @app.post("/search-osm-polygons", response_model=OsmGeoJson)
-async def search_osm_polygons(body: SearchOsmPolygons) -> Dict:
+def search_osm_polygons(body: SearchOsmPolygons) -> Dict:
     """
     Returns GeoJSON for all building polygons for a given bounding box from OSM.
 
@@ -184,9 +185,9 @@ async def fetch_osm_polygons(job_id: str) -> Dict:
 
 
 @app.post("/fetch-planet-imagery", response_model=Planet)
-async def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
+def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
     # Get the coordinates for the job from DynamoDB
-    coords = await fetch_coordinates(body.job_id)
+    coords = fetch_coordinates(body.job_id)
 
     # Convery the coordinates to a Shapely polygon
     bounding_box = create_bounding_box_poly(coords)
@@ -222,7 +223,7 @@ async def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
 
 
 @app.post("/launch-assessment")
-async def launch_assessment(body: LaunchAssessment):
+def launch_assessment(body: LaunchAssessment):
 
     # Persist the response to DynamoDB
     ddb.Table("xview2-ui-selected-imagery").put_item(
@@ -235,7 +236,7 @@ async def launch_assessment(body: LaunchAssessment):
 
     # Download the images for given job
     url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.pre_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
-    coords = await fetch_coordinates(body.job_id)
+    coords = fetch_coordinates(body.job_id)
     converter = Converter(
         Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
         Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
@@ -243,17 +244,12 @@ async def launch_assessment(body: LaunchAssessment):
         18,
         body.job_id
     )
-    converter.convert(
-        url,
-        "pre"
-    )
+    ret_counter = download_planet_imagery(converter=converter, url=url, prepost="pre")
 
     url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.post_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
-    coords = await fetch_coordinates(body.job_id)
-    converter.convert(
-        url,
-        "post"
-    )
+    coords = fetch_coordinates(body.job_id)
+    ret_counter = download_planet_imagery(converter=converter, url=url, prepost="post")
+
     # TODO run assessment
 
     # Update job status
@@ -261,7 +257,7 @@ async def launch_assessment(body: LaunchAssessment):
         Item={"uid": str(body.job_id), "status": "running_assessment"}
     )
 
-    return
+    return ret_counter
 
     # Update job status
     ddb.Table("xview2-ui-status").put_item(
