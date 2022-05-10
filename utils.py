@@ -180,7 +180,7 @@ def create_bounding_box_poly(coordinate: Coordinate) -> Polygon:
     return poly
 
 
-async def get_planet_imagery(client: ClientV1, geom: Polygon, current_date: str) -> dict:
+def get_planet_imagery(client: ClientV1, geom: Polygon, current_date: str) -> dict:
     end_date = dateutil.parser.isoparse(current_date)
     start_date = end_date - relativedelta(years=1)
 

@@ -78,7 +78,7 @@ async def startup_event():
 
 
 @app.post("/send-coordinates")
-async def send_coordinates(coordinate: Coordinate) -> str:
+def send_coordinates(coordinate: Coordinate) -> str:
 
     # Generate a UID
     uid = uuid.uuid4()
@@ -116,7 +116,7 @@ def fetch_coordinates(job_id: str) -> Coordinate:
 
 
 @app.get("/job-status")
-async def job_status(job_id: str) -> Dict:
+def job_status(job_id: str) -> Dict:
 
     resp = ddb.Table("xview2-ui-status").get_item(Key={"uid": job_id})
 
@@ -166,7 +166,7 @@ def search_osm_polygons(body: SearchOsmPolygons) -> Dict:
 
 
 @app.get("/fetch-osm-polygons", response_model=OsmGeoJson)
-async def fetch_osm_polygons(job_id: str) -> Dict:
+def fetch_osm_polygons(job_id: str) -> Dict:
     """
     Returns GeoJSON for a Job ID that exists in DynamoDB.
 
