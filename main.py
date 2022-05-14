@@ -142,17 +142,7 @@ def search_osm_polygons(body: SearchOsmPolygons) -> Dict:
     coordinate = order_coordinate(body.coordinate)
     # Needs to be south west north east -> end_lat start_lon start_lat end_lon
 
-    BASE_URL = "https://www.overpass-api.de/api/interpreter"
-    bounding_box = f"{coordinate.end_lat},{coordinate.start_lon},{coordinate.start_lat},{coordinate.end_lon}"
-    params = f"data=[out:json];(way[building]({bounding_box});relation[building]({bounding_box}););out%20geom;"
-
-    r = requests.get(BASE_URL, params=params)
-
-    data = r.json()
-    if len(data["elements"]) == 0:
-        return None
-
-    osm_geojson = json.loads(osm_geom_to_poly_geojson(data))
+    osm_geojson = osm_geom_to_poly_geojson(coordinate)
 
     if body.job_id:
         # Convert floats to Decimals
