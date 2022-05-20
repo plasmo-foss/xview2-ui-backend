@@ -10,7 +10,7 @@ from typing import Dict, List
 import boto3
 import planet
 import requests
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from fastapi import Depends, FastAPI, Header, HTTPException
 
 from schemas import (
@@ -51,6 +51,7 @@ app = FastAPI(
 client = None
 ddb = None
 access_keys = {}
+config = dotenv_values(".env")
 
 
 @app.on_event("startup")
@@ -59,20 +60,21 @@ async def startup_event():
     global access_keys
 
     # Todo: use db.py
-    conf = load_dotenv()
+    
+
     client = boto3.client(
         "dynamodb",
-        region_name=os.getenv("DB_REGION_NAME"),
-        aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
-        endpoint_url=os.getenv("DB_ENDPOINT_URL")
+        region_name=config.get("DB_REGION_NAME"),
+        aws_access_key_id=config.get("DB_ACCESS_KEY_ID"),
+        aws_secret_access_key=config.get("DB_SECRET_ACCESS_KEY"),
+        endpoint_url=config.get("DB_ENDPOINT_URL")
     )
     ddb = boto3.resource(
         "dynamodb",
-        region_name=os.getenv("DB_REGION_NAME"),
-        aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
-        endpoint_url=os.getenv("DB_ENDPOINT_URL")
+        region_name=config.get("DB_REGION_NAME"),
+        aws_access_key_id=config.get("DB_ACCESS_KEY_ID"),
+        aws_secret_access_key=config.get("DB_SECRET_ACCESS_KEY"),
+        endpoint_url=config.get("DB_ENDPOINT_URL")
     )
     ddb_exceptions = client.exceptions
 
@@ -186,7 +188,7 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
     # Convery the coordinates to a Shapely polygon
     bounding_box = create_bounding_box_poly(coords)
 
-    client = planet.api.ClientV1(os.getenv("PLANET_API_KEY"))
+    client = planet.api.ClientV1(config.get("PLANET_API_KEY"))
     if body.current_date is None:
         body.current_date = datetime.now().isoformat()
     imagery_list = get_planet_imagery(client, bounding_box, body.current_date)
@@ -229,18 +231,18 @@ def launch_assessment(body: LaunchAssessment):
     )
 
     # Download the images for given job
-    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.pre_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
+    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.pre_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={config.get('PLANET_API_KEY')}"
     coords = fetch_coordinates(body.job_id)
     converter = Converter(
-        Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
-        Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
+        Path(config.get("PLANET_IMAGERY_TEMP_DIR")),
+        Path(config.get("PLANET_IMAGERY_OUTPUT_DIR")),
         coords,
         18,
         body.job_id
     )
     ret_counter = download_planet_imagery(converter=converter, url=url, prepost="pre")
 
-    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.post_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
+    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.post_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={config.get('PLANET_API_KEY')}"
     coords = fetch_coordinates(body.job_id)
     ret_counter = download_planet_imagery(converter=converter, url=url, prepost="post")
 
