@@ -58,18 +58,21 @@ async def startup_event():
     global ddb
     global access_keys
 
+    # Todo: use db.py
     conf = load_dotenv()
     client = boto3.client(
         "dynamodb",
         region_name=os.getenv("DB_REGION_NAME"),
         aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
+        endpoint_url=os.getenv("DB_ENDPOINT_URL")
     )
     ddb = boto3.resource(
         "dynamodb",
         region_name=os.getenv("DB_REGION_NAME"),
         aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
+        endpoint_url=os.getenv("DB_ENDPOINT_URL")
     )
     ddb_exceptions = client.exceptions
 
@@ -251,7 +254,7 @@ def launch_assessment(body: LaunchAssessment):
     infer_args.append(converter.output_dir / converter.job_id / 'output')
 
     polys = fetch_osm_polygons(body.job_id)
-    
+
     if polys: 
         infer_args.append('--aoi_file')
         infer_args.append(polys)
