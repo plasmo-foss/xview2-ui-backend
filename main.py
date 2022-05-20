@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+import subprocess
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -241,6 +242,21 @@ def launch_assessment(body: LaunchAssessment):
     ret_counter = download_planet_imagery(converter=converter, url=url, prepost="post")
 
     # TODO run assessment
+    infer_args = []
+    infer_args.append('--pre_directory')
+    infer_args.append(converter.output_dir / converter.job_id / 'pre')
+    infer_args.append('--post_directory')
+    infer_args.append(converter.output_dir / converter.job_id / 'post')
+    infer_args.append('--output_directory')
+    infer_args.append(converter.output_dir / converter.job_id / 'output')
+
+    polys = fetch_osm_polygons(body.job_id)
+    
+    if polys: 
+        infer_args.append('--aoi_file')
+        infer_args.append(polys)
+
+    subprocess.run(['nohup', '/Users/lb/miniconda3/envs/xv2/bin/python3', '/Users/lb/Documents/Code/xView2_FDNY/handler.py'] + infer_args)
 
     # Update job status
     ddb.Table("xview2-ui-status").put_item(
@@ -262,7 +278,7 @@ def launch_assessment(body: LaunchAssessment):
 # 3. Send imagery to UI. ✅
 # 4. User selects pre and post image and submits.
 # 5. Launch the AI inference.
-# 6. Once 1A and 5 are done, clip the AI polygons with the OSM polygons
+# 6. Once 1A and 5 are done, clip the AI polygons with the OSM polygons ✅ completed with inference
 # 7. Return the GeoJSON to the UI for rendering
 
 # Nice to haves
@@ -271,4 +287,4 @@ def launch_assessment(body: LaunchAssessment):
 # 3. A method in which a count of damaged polygons can be displayed to the user.
 # 4. The ability to search for a location using Military Grid Reference System.
 # 5. Caching user requests.
-# 6. Better localization models / improved ability to create regular polygons (not blobby).
+# 6. Better localization models / improved ability to create regular polygons (not blobby). ✅ complete with inference

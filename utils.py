@@ -43,6 +43,7 @@ class Converter:
         return path
 
     def merge_tiles(self, input_pattern, output_path):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         vrt_path = self.temp_dir / "tiles.vrt"
         gdal.BuildVRT(vrt_path.as_posix(), glob.glob(input_pattern))
         gdal.Translate(output_path.as_posix(), vrt_path.as_posix())
@@ -102,7 +103,7 @@ class Converter:
 
         print("Merging tiles")
         self.merge_tiles((self.temp_dir / "*.tif").as_posix(),
-                         self.output_dir / f"{self.job_id}_{prepost}_merged.tif")
+                         self.output_dir / self.job_id / prepost / f"{self.job_id}_{prepost}_merged.tif")
         print("Merge complete")
 
         shutil.rmtree(self.temp_dir)
@@ -121,7 +122,8 @@ def order_coordinate(coordinate: Coordinate) -> Coordinate:
 
 def osm_geom_to_poly_geojson(coordinates: Coordinate, osm_tags: dict = {"building": True}) -> dict:
 
-    # Ordere coordinates (south, north, east, east) for osmnx
+    # Order coordinates (south, north, east, east) for osmnx
+    # Todo: Make sure these are passed in the correct order
     bbox = (coordinates.start_lat, coordinates.end_lat,
             coordinates.end_lon, coordinates.start_lon)
 
