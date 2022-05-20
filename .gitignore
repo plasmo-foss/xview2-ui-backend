@@ -2,6 +2,9 @@
 scratch_*
 cache/*
 
+# docker volumes
+docker/* #
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
