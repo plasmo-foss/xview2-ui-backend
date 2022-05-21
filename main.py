@@ -30,6 +30,8 @@ from utils import (
     Converter
 )
 
+from celery_app.tasks import run_xv
+
 
 def verify_key(access_key: str = Header("null")) -> bool:
     if not access_key in access_keys:
@@ -250,20 +252,19 @@ def launch_assessment(body: LaunchAssessment):
 
     # TODO run assessment
     infer_args = []
-    infer_args.append('--pre_directory')
-    infer_args.append(converter.output_dir / converter.job_id / 'pre')
-    infer_args.append('--post_directory')
-    infer_args.append(converter.output_dir / converter.job_id / 'post')
-    infer_args.append('--output_directory')
-    infer_args.append(converter.output_dir / converter.job_id / 'output')
+    data = {}
+    data["--pre_dictionary"] = converter.output_dir / converter.job_id / 'pre'
+    data["--post_directory"] = converter.output_dir / converter.job_id / 'post'
+    data["--output_directory"] = converter.output_dir / converter.job_id / 'output'
 
     polys = fetch_osm_polygons(body.job_id)
 
-    if polys: 
-        infer_args.append('--aoi_file')
-        infer_args.append(polys)
-
-    subprocess.run(['nohup', '/Users/lb/miniconda3/envs/xv2/bin/python3', '/Users/lb/Documents/Code/xView2_FDNY/handler.py'] + infer_args)
+    if polys:
+        data["--aoi_file"] = polys
+    
+    # Todo: create dictionry and pass to celery task
+    task_id = run_xv.delay(data)
+    # subprocess.run(['nohup', '/Users/lb/miniconda3/envs/xv2/bin/python3', '/Users/lb/Documents/Code/xView2_FDNY/handler.py'] + infer_args)
 
     # Update job status
     ddb.Table("xview2-ui-status").put_item(
@@ -276,6 +277,18 @@ def launch_assessment(body: LaunchAssessment):
     ddb.Table("xview2-ui-status").put_item(
         Item={"uid": str(job_id), "status": "running_assessment"}
     )
+
+
+@app.get("/get_results")
+async def churn_result(task_id):
+    pass
+    # """Fetch result for given task_id"""
+    # task = AsyncResult(task_id)
+    # if not task.ready():
+    #     print(app.url_path_for('churn'))
+    #     return JSONResponse(status_code=202, content={'task_id': str(task_id), 'status': 'Processing'})
+    # result = task.get()
+    # return {'task_id': task_id, 'status': 'Success', 'probability': str(result)}
 
 
 # TODO
