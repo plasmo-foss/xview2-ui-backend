@@ -230,9 +230,10 @@ def launch_assessment(body: LaunchAssessment):
         }
     )
 
+    coords = fetch_coordinates(body.job_id)
+
     # Download the images for given job
     url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.pre_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={config.get('PLANET_API_KEY')}"
-    coords = fetch_coordinates(body.job_id)
     converter = Converter(
         Path(config.get("PLANET_IMAGERY_TEMP_DIR")),
         Path(config.get("PLANET_IMAGERY_OUTPUT_DIR")),
@@ -243,8 +244,9 @@ def launch_assessment(body: LaunchAssessment):
     ret_counter = download_planet_imagery(converter=converter, url=url, prepost="pre")
 
     url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.post_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={config.get('PLANET_API_KEY')}"
-    coords = fetch_coordinates(body.job_id)
     ret_counter = download_planet_imagery(converter=converter, url=url, prepost="post")
+
+    osm_search = search_osm_polygons(SearchOsmPolygons(coordinate=coords, job_id=body.job_id))
 
     # TODO run assessment
     infer_args = []
