@@ -1,11 +1,44 @@
 version: '3.8'
+
 services:
-  dynamodb-local:
-    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
-    image: "amazon/dynamodb-local:latest"
-    container_name: dynamodb-local
+
+  web:
+    build: ./project
     ports:
-      - "8000:8000"
+      - 8004:8000
+    command: conda run -n xv2_backend uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
-      - "./docker/dynamodb:/home/dynamodblocal/data"
-    working_dir: /home/dynamodblocal
+      - ./project:/usr/src/app
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  worker:
+    build: ./project
+    command: conda run -n xv2_backend celery --app=worker.celery worker --loglevel=info --logfile=logs/celery.log
+    volumes:
+      - ./project:/usr/src/app
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - web
+      - redis
+
+  redis:
+    image: redis:6-alpine
+
+  dashboard:
+    build: ./project
+    command: conda run -n xv2_backend flower --app=worker.celery --port=5555 --broker=redis://redis:6379/0
+    ports:
+      - 5556:5555
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - web
+      - redis
+      - worker

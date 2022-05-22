@@ -1,7 +1,6 @@
 import glob
 import shutil
 import urllib.request
-import json
 
 import dateutil.parser
 import geopandas as gpd
@@ -10,7 +9,6 @@ from dateutil.relativedelta import relativedelta
 from osgeo import gdal
 from planet.api import ClientV1
 from shapely.geometry import MultiPolygon, Polygon, mapping
-import osmnx as ox
 
 from schemas import Coordinate
 from tileserverutils import bbox_to_xyz, x_to_lon_edges, y_to_lat_edges
@@ -24,15 +22,16 @@ class Converter:
         self.zoom = zoom
         self.job_id = job_id
 
+
     def tile_edges(self, x, y, z):
         lat1, lat2 = y_to_lat_edges(y, z)
         lon1, lon2 = x_to_lon_edges(x, z)
         return [lon1, lat1, lon2, lat2]
 
+
     def fetch_tile(self, x, y, z, tile_source):
         url = (
-            tile_source.replace("{x}", str(x)).replace(
-                "{y}", str(y)).replace("{z}", str(z))
+            tile_source.replace("{x}", str(x)).replace("{y}", str(y)).replace("{z}", str(z))
         )
 
         if not tile_source.startswith("http"):
@@ -42,11 +41,12 @@ class Converter:
         urllib.request.urlretrieve(url, path)
         return path
 
+
     def merge_tiles(self, input_pattern, output_path):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
         vrt_path = self.temp_dir / "tiles.vrt"
         gdal.BuildVRT(vrt_path.as_posix(), glob.glob(input_pattern))
         gdal.Translate(output_path.as_posix(), vrt_path.as_posix())
+
 
     def georeference_raster_tile(self, x, y, z, path):
         bounds = self.tile_edges(x, y, z)
@@ -56,7 +56,7 @@ class Converter:
             outputSRS="EPSG:4326",
             outputBounds=bounds,
         )
-
+    
     def convert(
         self,
         tile_source: str,
@@ -82,8 +82,7 @@ class Converter:
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        x_min, x_max, y_min, y_max = bbox_to_xyz(
-            lon_min, lon_max, lat_min, lat_max, self.zoom)
+        x_min, x_max, y_min, y_max = bbox_to_xyz(lon_min, lon_max, lat_min, lat_max, self.zoom)
         print(
             f"Fetching & georeferencing {(x_max - x_min + 1) * (y_max - y_min + 1)} tiles for {tile_source}"
         )
@@ -102,8 +101,7 @@ class Converter:
         print("Resolving and georeferencing of raster tiles complete")
 
         print("Merging tiles")
-        self.merge_tiles((self.temp_dir / "*.tif").as_posix(),
-                         self.output_dir / self.job_id / prepost / f"{self.job_id}_{prepost}_merged.tif")
+        self.merge_tiles((self.temp_dir / "*.tif").as_posix(), self.output_dir / f"{self.job_id}_{prepost}_merged.tif")
         print("Merge complete")
 
         shutil.rmtree(self.temp_dir)
@@ -120,32 +118,55 @@ def order_coordinate(coordinate: Coordinate) -> Coordinate:
     return Coordinate(start_lon=west, start_lat=north, end_lon=east, end_lat=south)
 
 
-def osm_geom_to_poly_geojson(coordinates: Coordinate, osm_tags: dict = {"building": True}) -> dict:
+def osm_geom_to_poly_geojson(osm_data: dict):
+    buildings = []
 
-    # Order coordinates (south, north, east, east) for osmnx
-    # Todo: Make sure these are passed in the correct order
-    bbox = (coordinates.start_lat, coordinates.end_lat,
-            coordinates.end_lon, coordinates.start_lon)
+    # Get the list of elements in the OSM query
+    elements = osm_data["elements"]
+    for element in elements:
+        # If it is a way, then it's as simply polygon
+        if element["type"] == "way":
+            poly = Polygon([(x["lon"], x["lat"]) for x in element["geometry"]])
+            buildings.append(poly)
 
-    gdf = ox.geometries_from_bbox(
-        coordinates.start_lat,
-        coordinates.end_lat,
-        coordinates.end_lon,
-        coordinates.start_lon,
-        tags=osm_tags
-        )
+        # If it is a relation, then it has an outer and inners
+        elif element["type"] == "relation":
+            outers = []
+            inners = []
+            for member in element["members"]:
+                if member["role"] == "outer":
+                    outers.append(member["geometry"])
+                elif member["role"] == "inner":
+                    inners.append(member["geometry"])
 
-    cols = ['geometry', 'name']
-    gdf = gdf.reset_index()
-    gdf = gdf.loc[gdf.element_type != 'node', cols]
+            outers_lonlat = []
+            inners_lonlat = []
 
-    return json.loads(gdf.reset_index().to_json())
+            for outer in outers:
+                if len(outer) <= 2:
+                    continue
+                outers_lonlat.append(Polygon([(x["lon"], x["lat"]) for x in outer]))
+
+            for inner in inners:
+                if len(inner) <=2:
+                    continue
+                inners_lonlat.append(Polygon([(x["lon"], x["lat"]) for x in inner]))
+
+            # Create a MultiPoly from the outer, then remove the inners
+            merged_outer = MultiPolygon(outers_lonlat)
+            for inner in inners_lonlat:
+                merged_outer = merged_outer - inner
+
+            buildings.append(merged_outer)
+
+    gdf = gpd.GeoDataFrame({"geometry": buildings})
+    return gdf.to_json()
 
 
 def create_bounding_box_poly(coordinate: Coordinate) -> Polygon:
     """
     Creates a rectangular bounding box Polygon given an input Coordinate
-
+    
         Parameters:
             coordinate (Coordinate): the input bounding box from the user UI
 
