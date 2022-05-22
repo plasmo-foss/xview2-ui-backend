@@ -1,0 +1,10 @@
+name: xv2_backend
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - planet
+  - gdal
+  - geopandas
+  - redis
+  - python=3.9

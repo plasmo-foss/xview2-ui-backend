@@ -1,7 +1,6 @@
 import json
 import os
 import uuid
-import subprocess
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -9,28 +8,17 @@ from typing import Dict, List
 
 import boto3
 import planet
-import requests
-from dotenv import dotenv_values
-from fastapi import Depends, FastAPI, Header, HTTPException
+from celery import group, chain, chord
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
-from schemas import (
-    Coordinate,
-    FetchPlanetImagery,
-    LaunchAssessment,
-    OsmGeoJson,
-    Planet,
-    SearchOsmPolygons,
-)
-from utils import (
-    create_bounding_box_poly,
-    get_planet_imagery,
-    order_coordinate,
-    osm_geom_to_poly_geojson,
-    download_planet_imagery,
-    Converter
-)
-
-from celery_app.tasks import run_xv
+from schemas import (Coordinate, FetchPlanetImagery, LaunchAssessment,
+                     OsmGeoJson, Planet, SearchOsmPolygons)
+from utils import (Converter, create_bounding_box_poly,
+                   download_planet_imagery, get_planet_imagery,
+                   order_coordinate)
+from worker import celery_search_osm_polygon, dummya, dummyb, dummyc, passthrough
 
 
 def verify_key(access_key: str = Header("null")) -> bool:
@@ -53,7 +41,6 @@ app = FastAPI(
 client = None
 ddb = None
 access_keys = {}
-config = dotenv_values(".env")
 
 
 @app.on_event("startup")
@@ -61,22 +48,18 @@ async def startup_event():
     global ddb
     global access_keys
 
-    # Todo: use db.py
-    
-
+    conf = load_dotenv()
     client = boto3.client(
         "dynamodb",
-        region_name=config.get("DB_REGION_NAME"),
-        aws_access_key_id=config.get("DB_ACCESS_KEY_ID"),
-        aws_secret_access_key=config.get("DB_SECRET_ACCESS_KEY"),
-        endpoint_url=config.get("DB_ENDPOINT_URL")
+        region_name=os.getenv("DB_REGION_NAME"),
+        aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
     )
     ddb = boto3.resource(
         "dynamodb",
-        region_name=config.get("DB_REGION_NAME"),
-        aws_access_key_id=config.get("DB_ACCESS_KEY_ID"),
-        aws_secret_access_key=config.get("DB_SECRET_ACCESS_KEY"),
-        endpoint_url=config.get("DB_ENDPOINT_URL")
+        region_name=os.getenv("DB_REGION_NAME"),
+        aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
     )
     ddb_exceptions = client.exceptions
 
@@ -146,21 +129,8 @@ def search_osm_polygons(body: SearchOsmPolygons) -> Dict:
         Returns:
             osm_geojson (dict): The FeatureCollection representing all building polygons for the bounding box
     """
-    # Fix the ordering of the coordinate
-    coordinate = order_coordinate(body.coordinate)
-    # Needs to be south west north east -> end_lat start_lon start_lat end_lon
-
-    osm_geojson = osm_geom_to_poly_geojson(coordinate)
-
-    if body.job_id:
-        # Convert floats to Decimals
-        item = json.loads(json.dumps(osm_geojson), parse_float=Decimal)
-
-        ddb.Table("xview2-ui-osm-polys").put_item(
-            Item={"uid": str(body.job_id), "geojson": item}
-        )
-
-    return OsmGeoJson(uid=body.job_id, geojson=osm_geojson)
+    ret = celery_search_osm_polygon(body, ddb)
+    return ret
 
 
 @app.get("/fetch-osm-polygons", response_model=OsmGeoJson)
@@ -190,7 +160,7 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
     # Convery the coordinates to a Shapely polygon
     bounding_box = create_bounding_box_poly(coords)
 
-    client = planet.api.ClientV1(config.get("PLANET_API_KEY"))
+    client = planet.api.ClientV1(os.getenv("PLANET_API_KEY"))
     if body.current_date is None:
         body.current_date = datetime.now().isoformat()
     imagery_list = get_planet_imagery(client, bounding_box, body.current_date)
@@ -232,39 +202,23 @@ def launch_assessment(body: LaunchAssessment):
         }
     )
 
-    coords = fetch_coordinates(body.job_id)
-
     # Download the images for given job
-    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.pre_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={config.get('PLANET_API_KEY')}"
+    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.pre_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
+    coords = fetch_coordinates(body.job_id)
     converter = Converter(
-        Path(config.get("PLANET_IMAGERY_TEMP_DIR")),
-        Path(config.get("PLANET_IMAGERY_OUTPUT_DIR")),
+        Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
+        Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
         coords,
         18,
         body.job_id
     )
     ret_counter = download_planet_imagery(converter=converter, url=url, prepost="pre")
 
-    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.post_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={config.get('PLANET_API_KEY')}"
+    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.post_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
+    coords = fetch_coordinates(body.job_id)
     ret_counter = download_planet_imagery(converter=converter, url=url, prepost="post")
 
-    osm_search = search_osm_polygons(SearchOsmPolygons(coordinate=coords, job_id=body.job_id))
-
     # TODO run assessment
-    infer_args = []
-    data = {}
-    data["--pre_dictionary"] = converter.output_dir / converter.job_id / 'pre'
-    data["--post_directory"] = converter.output_dir / converter.job_id / 'post'
-    data["--output_directory"] = converter.output_dir / converter.job_id / 'output'
-
-    polys = fetch_osm_polygons(body.job_id)
-
-    if polys:
-        data["--aoi_file"] = polys
-    
-    # Todo: create dictionry and pass to celery task
-    task_id = run_xv.delay(data)
-    # subprocess.run(['nohup', '/Users/lb/miniconda3/envs/xv2/bin/python3', '/Users/lb/Documents/Code/xView2_FDNY/handler.py'] + infer_args)
 
     # Update job status
     ddb.Table("xview2-ui-status").put_item(
@@ -279,26 +233,22 @@ def launch_assessment(body: LaunchAssessment):
     )
 
 
-@app.get("/get_results")
-async def churn_result(task_id):
-    pass
-    # """Fetch result for given task_id"""
-    # task = AsyncResult(task_id)
-    # if not task.ready():
-    #     print(app.url_path_for('churn'))
-    #     return JSONResponse(status_code=202, content={'task_id': str(task_id), 'status': 'Processing'})
-    # result = task.get()
-    # return {'task_id': task_id, 'status': 'Success', 'probability': str(result)}
-
+@app.get("/test-celery")
+def test_celery():
+    step_one = chord( group( [dummya.si(5), dummyb.si(10)] ), passthrough.si() )
+    step_two = dummyc.si(20)
+    workflow = chain(step_one, step_two)
+    ret = workflow.apply_async()
+    return JSONResponse({"task_id": ret.id})
 
 # TODO
 # 1. User presses submit on the UI -> coordinates sent to backend ✅
 # 1A. Fetch OSM polygons for given coordinates ✅
 # 2. Fetch variety of imagery from Maxar/Planet APIs ✅
 # 3. Send imagery to UI. ✅
-# 4. User selects pre and post image and submits.
-# 5. Launch the AI inference.
-# 6. Once 1A and 5 are done, clip the AI polygons with the OSM polygons ✅ completed with inference
+# 4. User selects pre and post image and submits. ✅
+# 5. Launch the AI inference. 
+# 6. Once 1A and 5 are done, clip the AI polygons with the OSM polygons
 # 7. Return the GeoJSON to the UI for rendering
 
 # Nice to haves
@@ -307,4 +257,4 @@ async def churn_result(task_id):
 # 3. A method in which a count of damaged polygons can be displayed to the user.
 # 4. The ability to search for a location using Military Grid Reference System.
 # 5. Caching user requests.
-# 6. Better localization models / improved ability to create regular polygons (not blobby). ✅ complete with inference
+# 6. Better localization models / improved ability to create regular polygons (not blobby).

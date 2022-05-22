@@ -17,8 +17,6 @@ def initialize_db() -> ServiceResource:
     ddb = boto3.resource('dynamodb',
                          region_name=Config.DB_REGION_NAME,
                          aws_access_key_id=Config.DB_ACCESS_KEY_ID,
-                         aws_secret_access_key=Config.DB_SECRET_ACCESS_KEY,
-                         endpoint_url=Config.DB_ENDPOINT_URL
-                         )
+                         aws_secret_access_key=Config.DB_SECRET_ACCESS_KEY)
 
     return ddb
