@@ -45,5 +45,5 @@ def get_imagery():
 
 
 @celery.task()
-def run_xv(cmd: list) -> None:
-    subprocess.run(cmd)
+def run_xv(args: list) -> None:
+    subprocess.run(['conda', 'run', '-n', 'xv2', 'python', '/Users/lb/Documents/Code/xView2_FDNY/handler.py'] + args)
