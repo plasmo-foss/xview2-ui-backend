@@ -13,12 +13,22 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from schemas import (Coordinate, FetchPlanetImagery, LaunchAssessment,
-                     OsmGeoJson, Planet, SearchOsmPolygons)
-from utils import (Converter, create_bounding_box_poly,
-                   download_planet_imagery, get_planet_imagery,
-                   order_coordinate)
-from worker import celery_search_osm_polygon, dummya, dummyb, dummyc, passthrough
+from schemas import (
+    Coordinate,
+    FetchPlanetImagery,
+    LaunchAssessment,
+    OsmGeoJson,
+    Planet,
+    SearchOsmPolygons,
+)
+from utils import (
+    Converter,
+    create_bounding_box_poly,
+    download_planet_imagery,
+    get_planet_imagery,
+    order_coordinate,
+)
+from worker import get_osm_polys, run_xv
 
 
 def verify_key(access_key: str = Header("null")) -> bool:
@@ -48,18 +58,21 @@ async def startup_event():
     global ddb
     global access_keys
 
-    conf = load_dotenv()
+    conf = load_dotenv(override=True)
+
     client = boto3.client(
         "dynamodb",
         region_name=os.getenv("DB_REGION_NAME"),
         aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
+        endpoint_url=os.getenv("DB_ENDPOINT_URL"),
     )
     ddb = boto3.resource(
         "dynamodb",
         region_name=os.getenv("DB_REGION_NAME"),
         aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
         aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
+        endpoint_url=os.getenv("DB_ENDPOINT_URL"),
     )
     ddb_exceptions = client.exceptions
 
@@ -117,22 +130,6 @@ def job_status(job_id: str) -> Dict:
         return None
 
 
-@app.post("/search-osm-polygons", response_model=OsmGeoJson)
-def search_osm_polygons(body: SearchOsmPolygons) -> Dict:
-    """
-    Returns GeoJSON for all building polygons for a given bounding box from OSM.
-
-        Parameters:
-            coordinate (Coordinate): A set of bounding box coordinates
-            job_id (str, optional): The Job ID string to persist the GeoJSON to
-
-        Returns:
-            osm_geojson (dict): The FeatureCollection representing all building polygons for the bounding box
-    """
-    ret = celery_search_osm_polygon(body, ddb)
-    return ret
-
-
 @app.get("/fetch-osm-polygons", response_model=OsmGeoJson)
 def fetch_osm_polygons(job_id: str) -> Dict:
     """
@@ -157,7 +154,7 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
     # Get the coordinates for the job from DynamoDB
     coords = fetch_coordinates(body.job_id)
 
-    # Convery the coordinates to a Shapely polygon
+    # Convert the coordinates to a Shapely polygon
     bounding_box = create_bounding_box_poly(coords)
 
     client = planet.api.ClientV1(os.getenv("PLANET_API_KEY"))
@@ -203,22 +200,34 @@ def launch_assessment(body: LaunchAssessment):
     )
 
     # Download the images for given job
-    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.pre_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
     coords = fetch_coordinates(body.job_id)
-    converter = Converter(
-        Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
-        Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
-        coords,
-        18,
-        body.job_id
-    )
-    ret_counter = download_planet_imagery(converter=converter, url=url, prepost="pre")
 
-    url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{body.post_image_id}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
-    coords = fetch_coordinates(body.job_id)
-    ret_counter = download_planet_imagery(converter=converter, url=url, prepost="post")
+    for pre_post in ["pre", "post"]:
+        converter = Converter(
+            Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
+            Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
+            coords,
+            18,
+            body.job_id,
+        )
+        if pre_post == "pre":
+            image = body.pre_image_id
+        else:
+            image = body.post_image_id
+
+        url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
+
+        # Todo: celery-ize this...well maybe later...don't think we can pass the converter object through serialization
+        ret_counter = download_planet_imagery(
+            converter=converter, url=url, prepost=pre_post
+        )
 
     # TODO run assessment
+    args = []
+    args += ["--pre_dictionary", converter.output_dir / converter.job_id / "pre"]
+    args += ["--post_directory", converter.output_dir / converter.job_id / "post"]
+    args += ["--output_directory", converter.output_dir / converter.job_id / "output"]
+    run_xv.delay(args)
 
     # Update job status
     ddb.Table("xview2-ui-status").put_item(
@@ -227,19 +236,24 @@ def launch_assessment(body: LaunchAssessment):
 
     return ret_counter
 
-    # Update job status
-    ddb.Table("xview2-ui-status").put_item(
-        Item={"uid": str(job_id), "status": "running_assessment"}
-    )
+
+# No longer works but this is how we should call our chain/chord
+# @app.get("/test-celery")
+# def test_celery():
+#     # use pipes to avoid bug chain/chord bug https://github.com/celery/celery/issues/6197
+#     t = group(dummya.s(5), dummyb.s(10)) | dummyc.s(20)
+#     ret = t.apply_async()
+#     return JSONResponse({"task_id": ret.id})
 
 
-@app.get("/test-celery")
-def test_celery():
-    step_one = chord( group( [dummya.si(5), dummyb.si(10)] ), passthrough.si() )
-    step_two = dummyc.si(20)
-    workflow = chain(step_one, step_two)
-    ret = workflow.apply_async()
-    return JSONResponse({"task_id": ret.id})
+@app.post("/celery_osm")
+def get_osm(body: Coordinate):
+    # Order coordinates (south, north, east, east) for osmnx
+    bbox = (body.start_lat, body.end_lat, body.end_lon, body.start_lon)
+
+    t = get_osm_polys.delay(ddb, bbox)
+    return t.get()  # Todo: remove this...testing only
+
 
 # TODO
 # 1. User presses submit on the UI -> coordinates sent to backend ✅
@@ -247,7 +261,7 @@ def test_celery():
 # 2. Fetch variety of imagery from Maxar/Planet APIs ✅
 # 3. Send imagery to UI. ✅
 # 4. User selects pre and post image and submits. ✅
-# 5. Launch the AI inference. 
+# 5. Launch the AI inference.
 # 6. Once 1A and 5 are done, clip the AI polygons with the OSM polygons
 # 7. Return the GeoJSON to the UI for rendering
 
