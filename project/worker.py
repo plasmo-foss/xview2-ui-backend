@@ -8,6 +8,7 @@ from utils import order_coordinate, osm_geom_to_poly_geojson, awsddb_client
 from decimal import Decimal
 import json
 import osmnx as ox
+import geopandas as gpd
 
 
 celery = Celery(__name__)
@@ -47,3 +48,15 @@ def get_imagery():
 @celery.task()
 def run_xv(args: list) -> None:
     subprocess.run(['conda', 'run', '-n', 'xv2', 'python', '/Users/lb/Documents/Code/xView2_FDNY/handler.py'] + args)
+
+
+@celery.task()
+def store_results(out_file: str, job_id: str):
+    gdf = gpd.read_file(out_file)
+    item = json.loads(gdf.reset_index().to_json(), parse_float=Decimal)
+
+    ddb.Table("xview2-ui-results").put_item(
+        Item={"uid": job_id, "geojson": item}
+    )
+
+    return
