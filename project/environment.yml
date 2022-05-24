@@ -7,4 +7,5 @@ dependencies:
   - gdal
   - geopandas
   - redis
+  - osmnx
   - python=3.9
