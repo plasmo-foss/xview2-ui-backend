@@ -27,7 +27,7 @@ from utils import (
     download_planet_imagery,
     get_planet_imagery,
     order_coordinate,
-    awsddb_client
+    awsddb_client,
 )
 from worker import get_osm_polys, run_xv
 
@@ -55,6 +55,7 @@ ddb = None
 conf = load_dotenv(override=True)
 
 access_keys = {}
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -207,18 +208,25 @@ def launch_assessment(body: LaunchAssessment):
             converter=converter, url=url, prepost=pre_post
         )
 
+    # Prepare our args for fetching OSM data
     bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
-    osm_out_path = converter.output_dir / converter.job_id / "in_polys" / f"{converter.job_id}_osm_poly.geojson"
+    osm_out_path = (converter.output_dir / converter.job_id / "in_polys" / f"{converter.job_id}_osm_poly.geojson").resolve()
     osm_out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    t = get_osm_polys.delay(converter.job_id, str(osm_out_path), bbox)
-
-    # TODO run assessment
+    # Prepare our args for xv2 run
     args = []
-    args += ["--pre_dictionary", converter.output_dir / converter.job_id / "pre"]
-    args += ["--post_directory", converter.output_dir / converter.job_id / "post"]
-    args += ["--output_directory", converter.output_dir / converter.job_id / "output"]
-    run_xv.delay(args)
+    args += ["--pre_directory", str(converter.output_dir / converter.job_id / "pre")]
+    args += ["--post_directory", str(converter.output_dir / converter.job_id / "post")]
+    args += [
+        "--output_directory",
+        str(converter.output_dir / converter.job_id / "output" / "results"),
+    ]
+    # Todo: check that we got polygons before we write the file, and make sure we have the file before we pass it as an arg
+    args += ["--aoi_file", str(osm_out_path)]
+
+    # Run our celery tasks
+    infer = get_osm_polys.s(converter.job_id, str(osm_out_path), bbox) | run_xv.si(args)
+    result = infer.apply_async()
 
     # Update job status
     ddb.Table("xview2-ui-status").put_item(
