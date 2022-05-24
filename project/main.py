@@ -27,6 +27,7 @@ from utils import (
     download_planet_imagery,
     get_planet_imagery,
     order_coordinate,
+    awsddb_client
 )
 from worker import get_osm_polys, run_xv
 
@@ -50,32 +51,16 @@ app = FastAPI(
 
 client = None
 ddb = None
-access_keys = {}
 
+conf = load_dotenv(override=True)
+
+access_keys = {}
 
 @app.on_event("startup")
 async def startup_event():
     global ddb
     global access_keys
-
-    conf = load_dotenv(override=True)
-
-    client = boto3.client(
-        "dynamodb",
-        region_name=os.getenv("DB_REGION_NAME"),
-        aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
-        endpoint_url=os.getenv("DB_ENDPOINT_URL"),
-    )
-    ddb = boto3.resource(
-        "dynamodb",
-        region_name=os.getenv("DB_REGION_NAME"),
-        aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
-        endpoint_url=os.getenv("DB_ENDPOINT_URL"),
-    )
-    ddb_exceptions = client.exceptions
-
+    ddb = awsddb_client()
     access_keys = set(
         [key.strip() for key in open(".env.access_keys", "r").readlines()]
     )
@@ -222,6 +207,12 @@ def launch_assessment(body: LaunchAssessment):
             converter=converter, url=url, prepost=pre_post
         )
 
+    bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
+    osm_out_path = converter.output_dir / converter.job_id / "in_polys" / f"{converter.job_id}_osm_poly.geojson"
+    osm_out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    t = get_osm_polys.delay(converter.job_id, str(osm_out_path), bbox)
+
     # TODO run assessment
     args = []
     args += ["--pre_dictionary", converter.output_dir / converter.job_id / "pre"]
@@ -251,7 +242,7 @@ def get_osm(body: Coordinate):
     # Order coordinates (south, north, east, east) for osmnx
     bbox = (body.start_lat, body.end_lat, body.end_lon, body.start_lon)
 
-    t = get_osm_polys.delay(ddb, bbox)
+    t = get_osm_polys.delay(bbox)
     return t.get()  # Todo: remove this...testing only
 
 
