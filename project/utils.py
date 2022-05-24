@@ -1,13 +1,16 @@
 import glob
 import shutil
 import urllib.request
+import os
 
 import dateutil.parser
 import geopandas as gpd
 import planet.api as api
+import boto3
 from dateutil.relativedelta import relativedelta
 from osgeo import gdal
 from planet.api import ClientV1
+from dotenv import load_dotenv
 from shapely.geometry import MultiPolygon, Polygon, mapping
 
 from schemas import Coordinate
@@ -22,16 +25,16 @@ class Converter:
         self.zoom = zoom
         self.job_id = job_id
 
-
     def tile_edges(self, x, y, z):
         lat1, lat2 = y_to_lat_edges(y, z)
         lon1, lon2 = x_to_lon_edges(x, z)
         return [lon1, lat1, lon2, lat2]
 
-
     def fetch_tile(self, x, y, z, tile_source):
         url = (
-            tile_source.replace("{x}", str(x)).replace("{y}", str(y)).replace("{z}", str(z))
+            tile_source.replace("{x}", str(x))
+            .replace("{y}", str(y))
+            .replace("{z}", str(z))
         )
 
         if not tile_source.startswith("http"):
@@ -41,12 +44,11 @@ class Converter:
         urllib.request.urlretrieve(url, path)
         return path
 
-
     def merge_tiles(self, input_pattern, output_path):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         vrt_path = self.temp_dir / "tiles.vrt"
         gdal.BuildVRT(vrt_path.as_posix(), glob.glob(input_pattern))
         gdal.Translate(output_path.as_posix(), vrt_path.as_posix())
-
 
     def georeference_raster_tile(self, x, y, z, path):
         bounds = self.tile_edges(x, y, z)
@@ -56,12 +58,8 @@ class Converter:
             outputSRS="EPSG:4326",
             outputBounds=bounds,
         )
-    
-    def convert(
-        self,
-        tile_source: str,
-        prepost: str
-    ) -> int:
+
+    def convert(self, tile_source: str, prepost: str) -> int:
         """
         Take in the URL for a tile server and save the raster to disk
 
@@ -82,7 +80,9 @@ class Converter:
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        x_min, x_max, y_min, y_max = bbox_to_xyz(lon_min, lon_max, lat_min, lat_max, self.zoom)
+        x_min, x_max, y_min, y_max = bbox_to_xyz(
+            lon_min, lon_max, lat_min, lat_max, self.zoom
+        )
         print(
             f"Fetching & georeferencing {(x_max - x_min + 1) * (y_max - y_min + 1)} tiles for {tile_source}"
         )
@@ -101,7 +101,10 @@ class Converter:
         print("Resolving and georeferencing of raster tiles complete")
 
         print("Merging tiles")
-        self.merge_tiles((self.temp_dir / "*.tif").as_posix(), self.output_dir / f"{self.job_id}_{prepost}_merged.tif")
+        self.merge_tiles(
+            (self.temp_dir / "*.tif").as_posix(),
+            self.output_dir / self.job_id / prepost / f"{self.job_id}_{prepost}_merged.tif"
+        )
         print("Merge complete")
 
         shutil.rmtree(self.temp_dir)
@@ -148,7 +151,7 @@ def osm_geom_to_poly_geojson(osm_data: dict):
                 outers_lonlat.append(Polygon([(x["lon"], x["lat"]) for x in outer]))
 
             for inner in inners:
-                if len(inner) <=2:
+                if len(inner) <= 2:
                     continue
                 inners_lonlat.append(Polygon([(x["lon"], x["lat"]) for x in inner]))
 
@@ -203,12 +206,25 @@ def get_planet_imagery(client: ClientV1, geom: Polygon, current_date: str) -> di
 
     # items_iter returns an iterator over API response pages
     return [
-        {"image_id": i["id"], "timestamp": i["properties"]["published"], "asset": i} for i in items
+        {"image_id": i["id"], "timestamp": i["properties"]["published"], "asset": i}
+        for i in items
     ]
 
 
 def download_planet_imagery(converter: Converter, url: str, prepost: str):
-    return converter.convert(
-        url,
-        prepost
+    return converter.convert(url, prepost)
+
+
+conf = load_dotenv(override=True)
+
+
+def awsddb_client():
+
+    return boto3.resource(
+        "dynamodb",
+        region_name=os.getenv("DB_REGION_NAME"),
+        aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
+        endpoint_url=os.getenv("DB_ENDPOINT_URL"),
     )
+
