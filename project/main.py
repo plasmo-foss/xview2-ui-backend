@@ -29,7 +29,7 @@ from utils import (
     order_coordinate,
     awsddb_client,
 )
-from worker import get_osm_polys, run_xv
+from worker import get_osm_polys, run_xv, store_results
 
 
 def verify_key(access_key: str = Header("null")) -> bool:
@@ -210,7 +210,12 @@ def launch_assessment(body: LaunchAssessment):
 
     # Prepare our args for fetching OSM data
     bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
-    osm_out_path = (converter.output_dir / converter.job_id / "in_polys" / f"{converter.job_id}_osm_poly.geojson").resolve()
+    osm_out_path = (
+        converter.output_dir
+        / converter.job_id
+        / "in_polys"
+        / f"{converter.job_id}_osm_poly.geojson"
+    ).resolve()
     osm_out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Prepare our args for xv2 run
@@ -225,7 +230,21 @@ def launch_assessment(body: LaunchAssessment):
     args += ["--aoi_file", str(osm_out_path)]
 
     # Run our celery tasks
-    infer = get_osm_polys.s(converter.job_id, str(osm_out_path), bbox) | run_xv.si(args)
+    infer = (
+        get_osm_polys.s(converter.job_id, str(osm_out_path), bbox)
+        | run_xv.si(args)
+        | store_results.si(
+            str(
+                converter.output_dir
+                / converter.job_id
+                / "output"
+                / "results"
+                / "vector"
+                / "damage.gpkg"
+            ),
+            converter.job_id,
+        )
+    )
     result = infer.apply_async()
 
     # Update job status
@@ -243,15 +262,6 @@ def launch_assessment(body: LaunchAssessment):
 #     t = group(dummya.s(5), dummyb.s(10)) | dummyc.s(20)
 #     ret = t.apply_async()
 #     return JSONResponse({"task_id": ret.id})
-
-
-@app.post("/celery_osm")
-def get_osm(body: Coordinate):
-    # Order coordinates (south, north, east, east) for osmnx
-    bbox = (body.start_lat, body.end_lat, body.end_lon, body.start_lon)
-
-    t = get_osm_polys.delay(bbox)
-    return t.get()  # Todo: remove this...testing only
 
 
 # TODO
