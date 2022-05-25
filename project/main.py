@@ -240,7 +240,7 @@ def launch_assessment(body: LaunchAssessment):
                 / "output"
                 / "results"
                 / "vector"
-                / "damage.gpkg"
+                / "damage.geojson"
             ),
             converter.job_id,
         )
