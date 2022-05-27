@@ -30,6 +30,7 @@ def get_osm_polys(job_id: str, out_file: str, bbox: tuple, osm_tags: dict = {"bu
     gdf = gdf.loc[gdf.element_type != "node", cols]
 
     item = json.loads(gdf.reset_index().to_json(), parse_float=Decimal)
+    # Todo: add CRS info to geojson
 
     ddb.Table("xview2-ui-osm-polys").put_item(
         Item={"uid": job_id, "geojson": item}

@@ -255,6 +255,26 @@ def launch_assessment(body: LaunchAssessment):
     return ret_counter
 
 
+@app.get("/fetch-assessment")
+def fetch_assessment(job_id: str):
+
+    # Required for serialization of DDB object
+    def dumps(item: dict) -> str:
+        return json.dumps(item, default=default_type_error_handler)
+
+
+    def default_type_error_handler(obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        raise TypeError
+
+    res_table = ddb.Table("xview2-ui-results")
+    item = res_table.get_item(Key={'uid': job_id})
+
+    return dumps(item["Item"]["geojson"])
+
+
+
 # No longer works but this is how we should call our chain/chord
 # @app.get("/test-celery")
 # def test_celery():
