@@ -52,10 +52,16 @@ def run_xv(args: list) -> None:
 
 
 @celery.task()
-def store_results(out_file: str, job_id: str):
-    gdf = gpd.read_file(out_file)
+def store_results(in_file: str, job_id: str):
+    gdf = gpd.read_file(in_file)
     item = json.loads(gdf.reset_index().to_json(), parse_float=Decimal)
-
+    
+    # df.to_json does not output the crs currently. Existing bug filed (and PR). Stop gap until that is implemented.
+    # https://github.com/geopandas/geopandas/issues/1774
+    authority, code = gdf.crs.to_authority()
+    ogc_crs = f"urn:ogc:def:crs:{authority}::{code}"
+    item["crs"] = {"type": "name", "properties": {"name": ogc_crs}}
+    
     ddb.Table("xview2-ui-results").put_item(
         Item={"uid": job_id, "geojson": item}
     )
