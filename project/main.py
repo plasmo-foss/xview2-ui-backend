@@ -268,8 +268,7 @@ def fetch_assessment(job_id: str):
             return float(obj)
         raise TypeError
 
-    res_table = ddb.Table("xview2-ui-results")
-    item = res_table.get_item(Key={'uid': job_id})
+    item = ddb.Table("xview2-ui-results").get_item(Key={'uid': job_id})
 
     return dumps(item["Item"]["geojson"])
 
