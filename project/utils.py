@@ -1,16 +1,18 @@
 import glob
+import json
+import os
 import shutil
 import urllib.request
-import os
 
+import boto3
 import dateutil.parser
 import geopandas as gpd
 import planet.api as api
-import boto3
+import requests
 from dateutil.relativedelta import relativedelta
-from osgeo import gdal
-from planet.api import ClientV1
 from dotenv import load_dotenv
+from osgeo import gdal
+from requests.auth import HTTPBasicAuth
 from shapely.geometry import MultiPolygon, Polygon, mapping
 
 from schemas import Coordinate
@@ -187,7 +189,7 @@ def create_bounding_box_poly(coordinate: Coordinate) -> Polygon:
     return poly
 
 
-def get_planet_imagery(client: ClientV1, geom: Polygon, current_date: str) -> dict:
+def get_planet_imagery(api_key: str, geom: Polygon, current_date: str) -> dict:
     end_date = dateutil.parser.isoparse(current_date)
     start_date = end_date - relativedelta(years=1)
 
@@ -200,13 +202,17 @@ def get_planet_imagery(client: ClientV1, geom: Polygon, current_date: str) -> di
     )
 
     request = api.filters.build_search_request(query, ["SkySatCollect"])
-    # this will cause an exception if there are any API related errors
-    results = client.quick_search(request)
-    items = [i for i in results.items_iter(500)]
+    search_result = requests.post(
+        'https://api.planet.com/data/v1/quick-search',
+        auth=HTTPBasicAuth(api_key, ''),
+        json=request)
+
+    search_result_json = json.loads(search_result.text)
+    items = search_result_json["features"]
 
     # items_iter returns an iterator over API response pages
     return [
-        {"image_id": i["id"], "timestamp": i["properties"]["published"], "asset": i}
+        {"image_id": i["id"], "timestamp": i["properties"]["published"]}
         for i in items
     ]
 
