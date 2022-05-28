@@ -6,8 +6,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List
 
-import boto3
-import planet
 from celery import group, chain, chord
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -143,10 +141,9 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
     # Convert the coordinates to a Shapely polygon
     bounding_box = create_bounding_box_poly(coords)
 
-    client = planet.api.ClientV1(os.getenv("PLANET_API_KEY"))
     if body.current_date is None:
         body.current_date = datetime.now().isoformat()
-    imagery_list = get_planet_imagery(client, bounding_box, body.current_date)
+    imagery_list = get_planet_imagery(os.getenv("PLANET_API_KEY"), bounding_box, body.current_date)
 
     ret = []
     for image in imagery_list:
@@ -154,8 +151,7 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
             {
                 "timestamp": image["timestamp"],
                 "item_type": "SkySatCollect",
-                "item_id": image["image_id"],
-                # "asset": image["asset"]
+                "item_id": image["image_id"]
             }
         )
 
