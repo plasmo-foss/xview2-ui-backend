@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 
 from celery import Celery
 from schemas.osmgeojson import OsmGeoJson
@@ -25,7 +26,7 @@ def get_osm_polys(job_id: str, out_file: str, bbox: tuple, osm_tags: dict = {"bu
 
     gdf = ox.geometries_from_bbox(bbox[0], bbox[1], bbox[2], bbox[3], tags=osm_tags)
 
-    cols = ["geometry", "name"]
+    cols = ["geometry", "osmid"]
     gdf = gdf.reset_index()
     gdf = gdf.loc[gdf.element_type != "node", cols]
 
@@ -48,7 +49,7 @@ def get_imagery():
 
 @celery.task()
 def run_xv(args: list) -> None:
-    subprocess.run(['conda', 'run', '-n', 'xv2', 'python', '/Users/lb/Documents/Code/xView2_FDNY/handler.py'] + args)
+    subprocess.run(['conda', 'run', '-n', 'xview2', 'python', '/home/ubuntu/xView2_FDNY/handler.py'] + args)
 
 
 @celery.task()
