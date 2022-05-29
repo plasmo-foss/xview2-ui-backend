@@ -223,7 +223,7 @@ def launch_assessment(body: LaunchAssessment):
         str(converter.output_dir / converter.job_id / "output" / "results"),
     ]
     # Todo: check that we got polygons before we write the file, and make sure we have the file before we pass it as an arg
-    args += ["--aoi_file", str(osm_out_path)]
+    args += ["--bldg_polys", str(osm_out_path)]
 
     # Run our celery tasks
     infer = (
