@@ -220,7 +220,7 @@ def launch_assessment(body: LaunchAssessment):
     args += ["--post_directory", str(converter.output_dir / converter.job_id / "post")]
     args += [
         "--output_directory",
-        str(converter.output_dir / converter.job_id / "output" / "results"),
+        str(converter.output_dir / converter.job_id / "output"),
     ]
     # Todo: check that we got polygons before we write the file, and make sure we have the file before we pass it as an arg
     args += ["--bldg_polys", str(osm_out_path)]
@@ -234,7 +234,6 @@ def launch_assessment(body: LaunchAssessment):
                 converter.output_dir
                 / converter.job_id
                 / "output"
-                / "results"
                 / "vector"
                 / "damage.geojson"
             ),
