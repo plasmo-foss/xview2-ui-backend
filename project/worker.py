@@ -67,4 +67,9 @@ def store_results(in_file: str, job_id: str):
         Item={"uid": job_id, "geojson": item}
     )
 
+    # Update job status
+    ddb.Table("xview2-ui-status").put_item(
+        Item={"uid": job_id, "status": "done"}
+    )
+
     return
