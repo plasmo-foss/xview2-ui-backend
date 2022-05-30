@@ -222,6 +222,7 @@ def launch_assessment(body: LaunchAssessment):
         "--output_directory",
         str(converter.output_dir / converter.job_id / "output"),
     ]
+    args += ["--destination_crs", "EPSG:3857"]
     # Todo: check that we got polygons before we write the file, and make sure we have the file before we pass it as an arg
     args += ["--bldg_polys", str(osm_out_path)]
 
