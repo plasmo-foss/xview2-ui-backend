@@ -1,6 +1,7 @@
 # helpers
 scratch_*
 *cache*
+scratch/*
 
 # docker volumes
 docker/*
