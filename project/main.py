@@ -22,11 +22,10 @@ from schemas import (
     Planet,
     SearchOsmPolygons,
 )
+
 from utils import (
-    Imagery,
     PlanetIM,
     create_bounding_box_poly,
-    download_planet_imagery,
     order_coordinate,
     awsddb_client,
 )
@@ -150,15 +149,15 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
     end_date = dateutil.parser.isoparse(body.current_date) - relativedelta(year=1)
 
     converter = PlanetIM(
-            Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
-            Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
-            bounding_box,
-            18,
-            body.job_id,
-            body.current_date,
-            end_date,
-            os.getenv("PLANET_API_KEY")
-        )
+        Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
+        Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
+        bounding_box,
+        18,
+        body.job_id,
+        body.current_date,
+        end_date,
+        os.getenv("PLANET_API_KEY"),
+    )
 
     imagery_list = converter.get_imagery_list()
 
@@ -168,7 +167,7 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
             {
                 "timestamp": image["timestamp"],
                 "item_type": "SkySatCollect",
-                "item_id": image["image_id"]
+                "item_id": image["image_id"],
             }
         )
 
@@ -200,26 +199,27 @@ def launch_assessment(body: LaunchAssessment):
 
     # Download the images for given job
     coords = fetch_coordinates(body.job_id)
+    bounding_box = create_bounding_box_poly(coords)
 
     for pre_post in ["pre", "post"]:
-        converter = Imagery(
+        converter = PlanetIM(
             Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
             Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
             coords,
             18,
             body.job_id,
+            None,
+            None,
+            os.getenv("PLANET_API_KEY"),
         )
+
         if pre_post == "pre":
             image = body.pre_image_id
         else:
             image = body.post_image_id
 
-        url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
-
         # Todo: celery-ize this...well maybe later...don't think we can pass the converter object through serialization
-        ret_counter = download_planet_imagery(
-            converter=converter, url=url, prepost=pre_post
-        )
+        ret_counter = converter.download_imagery(prepost=pre_post, image=image)
 
     # Prepare our args for fetching OSM data
     bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
@@ -274,7 +274,6 @@ def fetch_assessment(job_id: str):
     def dumps(item: dict) -> str:
         return json.dumps(item, default=default_type_error_handler)
 
-
     def default_type_error_handler(obj):
         if isinstance(obj, Decimal):
             return float(obj)
@@ -290,7 +289,6 @@ def fetch_assessment(job_id: str):
         return json.loads(gdf.to_crs(4326).to_json())
     else:
         return None
-
 
 
 # No longer works but this is how we should call our chain/chord
