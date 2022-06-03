@@ -19,13 +19,16 @@ from schemas import Coordinate
 from tileserverutils import bbox_to_xyz, x_to_lon_edges, y_to_lat_edges
 
 
-class Converter:
-    def __init__(self, temp_dir, output_dir, bounding_box, zoom, job_id):
+class Imagery:
+    def __init__(self, temp_dir, output_dir, bounding_box, zoom, job_id, end_date, start_date, api_key):
         self.temp_dir = temp_dir
         self.output_dir = output_dir
         self.bounding_box = bounding_box
         self.zoom = zoom
         self.job_id = job_id
+        self.end_date = end_date
+        self.start_date = start_date
+        self.api_key = api_key
 
     def tile_edges(self, x, y, z):
         lat1, lat2 = y_to_lat_edges(y, z)
@@ -114,6 +117,34 @@ class Converter:
         return ret_counter
 
 
+class PlanetIM(Imagery):
+
+    def get_imagery_list(self):
+
+        query = api.filters.and_filter(
+            api.filters.geom_filter(mapping(self.bounding_box)),
+            api.filters.date_range("acquired", gte=self.start_date, lte=self.end_date),
+            api.filters.range_filter("cloud_cover", lte=0.2),
+            api.filters.permission_filter("assets.ortho_pansharpened:download"),
+            api.filters.string_filter("quality_category", "standard"),
+        )
+
+        request = api.filters.build_search_request(query, ["SkySatCollect"])
+        search_result = requests.post(
+            'https://api.planet.com/data/v1/quick-search',
+            auth=HTTPBasicAuth(self.api_key, ''),
+            json=request)
+
+        search_result_json = json.loads(search_result.text)
+        items = search_result_json["features"]
+
+        # items_iter returns an iterator over API response pages
+        return [
+            {"image_id": i["id"], "timestamp": i["properties"]["published"]}
+            for i in items
+        ]
+
+
 def order_coordinate(coordinate: Coordinate) -> Coordinate:
     south = min(coordinate.start_lat, coordinate.end_lat)
     north = max(coordinate.start_lat, coordinate.end_lat)
@@ -189,35 +220,35 @@ def create_bounding_box_poly(coordinate: Coordinate) -> Polygon:
     return poly
 
 
-def get_planet_imagery(api_key: str, geom: Polygon, current_date: str) -> dict:
-    end_date = dateutil.parser.isoparse(current_date)
-    start_date = end_date - relativedelta(years=1)
+# def get_planet_imagery(api_key: str, geom: Polygon, current_date: str) -> dict:
+#     end_date = dateutil.parser.isoparse(current_date)
+#     start_date = end_date - relativedelta(years=1)
 
-    query = api.filters.and_filter(
-        api.filters.geom_filter(mapping(geom)),
-        api.filters.date_range("acquired", gte=start_date, lte=end_date),
-        api.filters.range_filter("cloud_cover", lte=0.2),
-        api.filters.permission_filter("assets.ortho_pansharpened:download"),
-        api.filters.string_filter("quality_category", "standard"),
-    )
+#     query = api.filters.and_filter(
+#         api.filters.geom_filter(mapping(geom)),
+#         api.filters.date_range("acquired", gte=start_date, lte=end_date),
+#         api.filters.range_filter("cloud_cover", lte=0.2),
+#         api.filters.permission_filter("assets.ortho_pansharpened:download"),
+#         api.filters.string_filter("quality_category", "standard"),
+#     )
 
-    request = api.filters.build_search_request(query, ["SkySatCollect"])
-    search_result = requests.post(
-        'https://api.planet.com/data/v1/quick-search',
-        auth=HTTPBasicAuth(api_key, ''),
-        json=request)
+#     request = api.filters.build_search_request(query, ["SkySatCollect"])
+#     search_result = requests.post(
+#         'https://api.planet.com/data/v1/quick-search',
+#         auth=HTTPBasicAuth(api_key, ''),
+#         json=request)
 
-    search_result_json = json.loads(search_result.text)
-    items = search_result_json["features"]
+#     search_result_json = json.loads(search_result.text)
+#     items = search_result_json["features"]
 
-    # items_iter returns an iterator over API response pages
-    return [
-        {"image_id": i["id"], "timestamp": i["properties"]["published"]}
-        for i in items
-    ]
+#     # items_iter returns an iterator over API response pages
+#     return [
+#         {"image_id": i["id"], "timestamp": i["properties"]["published"]}
+#         for i in items
+#     ]
 
 
-def download_planet_imagery(converter: Converter, url: str, prepost: str):
+def download_planet_imagery(converter: Imagery, url: str, prepost: str):
     return converter.convert(url, prepost)
 
 

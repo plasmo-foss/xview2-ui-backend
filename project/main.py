@@ -5,6 +5,8 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List
+import dateutil.parser
+from dateutil.relativedelta import relativedelta
 
 from celery import group, chain, chord
 from dotenv import load_dotenv
@@ -21,10 +23,10 @@ from schemas import (
     SearchOsmPolygons,
 )
 from utils import (
-    Converter,
+    Imagery,
+    PlanetIM,
     create_bounding_box_poly,
     download_planet_imagery,
-    get_planet_imagery,
     order_coordinate,
     awsddb_client,
 )
@@ -144,7 +146,21 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
 
     if body.current_date is None:
         body.current_date = datetime.now().isoformat()
-    imagery_list = get_planet_imagery(os.getenv("PLANET_API_KEY"), bounding_box, body.current_date)
+
+    end_date = dateutil.parser.isoparse(body.current_date) - relativedelta(year=1)
+
+    converter = PlanetIM(
+            Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
+            Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
+            bounding_box,
+            18,
+            body.job_id,
+            body.current_date,
+            end_date,
+            os.getenv("PLANET_API_KEY")
+        )
+
+    imagery_list = converter.get_imagery_list()
 
     ret = []
     for image in imagery_list:
@@ -186,7 +202,7 @@ def launch_assessment(body: LaunchAssessment):
     coords = fetch_coordinates(body.job_id)
 
     for pre_post in ["pre", "post"]:
-        converter = Converter(
+        converter = Imagery(
             Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
             Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
             coords,
