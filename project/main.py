@@ -10,6 +10,7 @@ from celery import group, chain, chord
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+import geopandas as gpd
 
 from schemas import (
     Coordinate,
@@ -222,7 +223,6 @@ def launch_assessment(body: LaunchAssessment):
         "--output_directory",
         str(converter.output_dir / converter.job_id / "output"),
     ]
-    args += ["--destination_crs", "EPSG:3857"]
     # Todo: check that we got polygons before we write the file, and make sure we have the file before we pass it as an arg
     args += ["--bldg_polys", str(osm_out_path)]
 
@@ -264,9 +264,16 @@ def fetch_assessment(job_id: str):
             return float(obj)
         raise TypeError
 
-    item = ddb.Table("xview2-ui-results").get_item(Key={'uid': job_id})
+    resp = ddb.Table("xview2-ui-results").get_item(Key={"uid": job_id})
 
-    return dumps(item["Item"]["geojson"])
+    # The stored response is in a local, projected CRS. We reproject to EPSG 4326 for Deck.gl to render.
+    if "Item" in resp:
+        crs = resp["Item"]["geojson"]["crs"]["properties"]["name"].split("::")[1]
+        gdf = gpd.read_file(dumps(resp["Item"]["geojson"]), driver="GeoJSON")
+        gdf = gdf.set_crs(crs, allow_override=True)
+        return json.loads(gdf.to_crs(4326).to_json())
+    else:
+        return None
 
 
 
