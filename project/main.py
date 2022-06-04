@@ -25,6 +25,7 @@ from schemas import (
 
 from utils import (
     PlanetIM,
+    MAXARIM,
     create_bounding_box_poly,
     order_coordinate,
     awsddb_client,
@@ -163,6 +164,7 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
 
     ret = []
     for image in imagery_list:
+        # Todo: Change to accommodate different imagery providers
         ret.append(
             {
                 "timestamp": image["timestamp"],

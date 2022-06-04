@@ -87,7 +87,7 @@ class Imagery(ABC):
 
 class MAXARIM(Imagery):
     def get_imagery_list(self):
-        def _construct_cql(self, cql_list):
+        def _construct_cql(cql_list):
 
             t = []
 
