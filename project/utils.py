@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import urllib.request
+import xmltodict
 
 import boto3
 import dateutil.parser
@@ -10,6 +11,7 @@ import geopandas as gpd
 import planet.api as api
 import requests
 from dateutil.relativedelta import relativedelta
+from abc import ABC, abstractmethod
 from dotenv import load_dotenv
 from osgeo import gdal
 from requests.auth import HTTPBasicAuth
@@ -19,7 +21,7 @@ from schemas import Coordinate
 from tileserverutils import bbox_to_xyz, x_to_lon_edges, y_to_lat_edges
 
 
-class Imagery:
+class Imagery(ABC):
     def __init__(
         self,
         temp_dir,
@@ -74,6 +76,119 @@ class Imagery:
             outputBounds=bounds,
         )
 
+    @abstractmethod
+    def get_imagery_list(self):
+        pass
+
+    @abstractmethod
+    def download_imagery(self):
+        pass
+
+
+class MAXARIM(Imagery):
+    def get_imagery_list(self):
+        def _construct_cql(self, cql_list):
+
+            t = []
+
+            for query in cql_list:
+                if query["type"] == "inequality":
+                    t.append(f"({query['key']}{query['value']})")
+                elif query["type"] == "compound":
+                    t.append(f"({query['key']}({query['value']}))")
+                else:
+                    t.append(f"({query['key']}={query['value']})")
+
+            return "AND".join(t)
+
+        CONNECTID = "d56487b0-b430-4342-9244-d24c2e2d289b"
+        crs = "EPSG:4326"
+        bounding_box = "34.068123,-96.509471,34.098737,-96.472678"
+        CQL_QUERY = [
+            {"key": "cloudCover", "value": "<0.10", "type": "inequality"},
+            {"key": "formattedDate", "value": ">'2021-05-01'", "type": "inequality"},
+            {"key": "BBOX", "value": f"geometry,{bounding_box}", "type": "compound"},
+        ]
+        query = _construct_cql(CQL_QUERY)
+
+        params = {
+            "SERVICE": "WFS",
+            "REQUEST": "GetFeature",
+            "typeName": "DigitalGlobe:FinishedFeature",
+            "VERSION": "1.1.0",
+            "connectId": CONNECTID,
+            "srsName": crs,
+            "CQL_Filter": query,
+        }
+
+        BASE_URL = f"https://evwhs.digitalglobe.com/catalogservice/wfsaccess"
+
+        resp = requests.get(BASE_URL, params=params)
+        result = xmltodict.parse(resp.text)
+
+        return [
+            {"image_id": i["@gml:id"], "timestamp": i["DigitalGlobe:acquisitionDate"]}
+            for i in result["wfs:FeatureCollection"]["gml:featureMembers"]["DigitalGlobe:FinishedFeature"]
+        ]
+
+    def download_imagery(self, prepost: str, image: str) -> int:
+        """
+        Take in the URL for a tile server and save the raster to disk
+
+        Parameters:
+            tile_source (str): the URL to the tile server
+            prepost: (str) whether or not the tile server URL is of pre or post-disaster imagery
+
+        Returns:
+            ret_counter (int): how many tiles failed to download
+        """
+
+        # url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
+        url = f"https://evwhs.digitalglobe.com/earthservice/wmtsaccess?CONNECTID={os.getenv('MAXAR_API_KEY')}&SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&TILEMATRIXSET=EPSG:4326&LAYER=DigitalGlobe:ImageryTileService&FORMAT=image/png&TILEMATRIX=EPSG:4326:{{z}}&TILEROW={{x}}&TILECOL={{y}}&FEATUREPROFILE=Global_Currency_Profile&&featureId={image}"
+
+        lon_min = self.bounding_box.start_lon
+        lat_min = self.bounding_box.end_lat
+        lon_max = self.bounding_box.end_lon
+        lat_max = self.bounding_box.start_lat
+
+        # Script start:
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        x_min, x_max, y_min, y_max = bbox_to_xyz(
+            lon_min, lon_max, lat_min, lat_max, self.zoom
+        )
+        print(
+            f"Fetching & georeferencing {(x_max - x_min + 1) * (y_max - y_min + 1)} tiles for {url}"
+        )
+
+        ret_counter = 0
+        for x in range(x_min, x_max + 1):
+            for y in range(y_min, y_max + 1):
+                try:
+                    png_path = self.fetch_tile(x, y, self.zoom, url)
+                    self.georeference_raster_tile(x, y, self.zoom, png_path)
+                except OSError:
+                    print(f"Error, failed to get {x},{y}")
+                    ret_counter += 1
+                    pass
+
+        print("Resolving and georeferencing of raster tiles complete")
+
+        # Todo: Should we just allow xV2 to do this?
+        print("Merging tiles")
+        self.merge_tiles(
+            (self.temp_dir / "*.tif").as_posix(),
+            self.output_dir
+            / self.job_id
+            / prepost
+            / f"{self.job_id}_{prepost}_merged.tif",
+        )
+        print("Merge complete")
+
+        shutil.rmtree(self.temp_dir)
+
+        return ret_counter
 
 class PlanetIM(Imagery):
     def get_imagery_list(self):
@@ -113,7 +228,7 @@ class PlanetIM(Imagery):
         Returns:
             ret_counter (int): how many tiles failed to download
         """
-        
+
         url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
 
         lon_min = self.bounding_box.start_lon
@@ -269,6 +384,7 @@ def create_bounding_box_poly(coordinate: Coordinate) -> Polygon:
 
 
 load_dotenv(override=True)
+
 
 def awsddb_client():
 
