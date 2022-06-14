@@ -79,6 +79,7 @@ class Converter:
         lat_max = box.start_lat
 
         # Script start:
+        self.temp_dir = self.temp_dir / f"{self.job_id}_{prepost}"
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
