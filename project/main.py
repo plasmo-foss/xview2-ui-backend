@@ -25,7 +25,7 @@ from schemas import (
 
 from utils import (
     PlanetIM,
-    MAXARIM,
+    # MAXARIM,
     create_bounding_box_poly,
     order_coordinate,
     awsddb_client,
@@ -138,45 +138,22 @@ def fetch_osm_polygons(job_id: str) -> Dict:
 
 @app.post("/fetch-planet-imagery", response_model=Planet)
 def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
-    # Get the coordinates for the job from DynamoDB
+    # Get the coordinates for the job from DynamoDB and create shapely polygon
     coords = fetch_coordinates(body.job_id)
-
-    # Convert the coordinates to a Shapely polygon
     bounding_box = create_bounding_box_poly(coords)
 
     if body.current_date is None:
         body.current_date = datetime.now().isoformat()
 
-    end_date = dateutil.parser.isoparse(body.current_date) - relativedelta(year=1)
+    end_date = dateutil.parser.isoparse(body.current_date)
+    start_date = end_date - relativedelta(years=1)
 
-    converter = PlanetIM(
-        Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
-        Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
-        bounding_box,
-        18,
-        body.job_id,
-        body.current_date,
-        end_date,
-        os.getenv("PLANET_API_KEY"),
-    )
+    converter = PlanetIM(os.getenv("PLANET_API_KEY"))
 
-    imagery_list = converter.get_imagery_list()
+    imagery_list = converter.get_imagery_list(bounding_box, start_date, end_date)
 
-    ret = []
-    for image in imagery_list:
-        # Todo: Change to accommodate different imagery providers
-        ret.append(
-            {
-                "timestamp": image["timestamp"],
-                "item_type": "SkySatCollect",
-                "item_id": image["image_id"],
-            }
-        )
-
-    item = json.loads(json.dumps(ret), parse_float=Decimal)
-    # Persist the response to DynamoDB
     ddb.Table("xview2-ui-planet-api").put_item(
-        Item={"uid": str(body.job_id), "planet_response": item}
+        Item={"uid": str(body.job_id), "planet_response": imagery_list}
     )
 
     # Update job status
@@ -184,7 +161,7 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
         Item={"uid": str(body.job_id), "status": "waiting_assessment"}
     )
 
-    return Planet(uid=body.job_id, images=ret)
+    return Planet(uid=body.job_id, images=imagery_list)
 
 
 @app.post("/launch-assessment")
@@ -203,17 +180,9 @@ def launch_assessment(body: LaunchAssessment):
     coords = fetch_coordinates(body.job_id)
     bounding_box = create_bounding_box_poly(coords)
 
+    converter = PlanetIM(os.getenv("PLANET_API_KEY"))
+
     for pre_post in ["pre", "post"]:
-        converter = PlanetIM(
-            Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
-            Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
-            coords,
-            18,
-            body.job_id,
-            None,
-            None,
-            os.getenv("PLANET_API_KEY"),
-        )
 
         if pre_post == "pre":
             image = body.pre_image_id
@@ -221,7 +190,8 @@ def launch_assessment(body: LaunchAssessment):
             image = body.post_image_id
 
         # Todo: celery-ize this...well maybe later...don't think we can pass the converter object through serialization
-        ret_counter = converter.download_imagery(prepost=pre_post, image=image)
+        # Expects a shapely polygon to allow geometries other than rectangles at some point
+        ret_counter = converter.download_imagery_helper(body.job_id, pre_post, image, bounding_box, Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")), Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")))
 
     # Prepare our args for fetching OSM data
     bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
