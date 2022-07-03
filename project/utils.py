@@ -118,120 +118,127 @@ class Imagery(ABC):
 
 
 # Todo: Not working pending reply from MAXAR support on fetching images
-# class MAXARIM(Imagery):
-#     def get_imagery_list(self):
-#         def _construct_cql(cql_list):
+class MAXARIM(Imagery):
+    def get_imagery_list(
+        self, geometry: Polygon, start_date: str, end_date: str
+    ) -> list:
 
-#             t = []
+        def _construct_cql(cql_list):
 
-#             for query in cql_list:
-#                 if query["type"] == "inequality":
-#                     t.append(f"({query['key']}{query['value']})")
-#                 elif query["type"] == "compound":
-#                     t.append(f"({query['key']}({query['value']}))")
-#                 else:
-#                     t.append(f"({query['key']}={query['value']})")
+            t = []
 
-#             return "AND".join(t)
+            for query in cql_list:
+                if query["type"] == "inequality":
+                    t.append(f"({query['key']}{query['value']})")
+                elif query["type"] == "compound":
+                    t.append(f"({query['key']}({query['value']}))")
+                else:
+                    t.append(f"({query['key']}={query['value']})")
 
-#         CONNECTID = "d56487b0-b430-4342-9244-d24c2e2d289b"
-#         crs = "EPSG:4326"
-#         bounding_box = "34.068123,-96.509471,34.098737,-96.472678"
-#         CQL_QUERY = [
-#             {"key": "cloudCover", "value": "<0.10", "type": "inequality"},
-#             {"key": "formattedDate", "value": ">'2021-05-01'", "type": "inequality"},
-#             {"key": "BBOX", "value": f"geometry,{bounding_box}", "type": "compound"},
-#         ]
-#         query = _construct_cql(CQL_QUERY)
+            return "AND".join(t)
 
-#         params = {
-#             "SERVICE": "WFS",
-#             "REQUEST": "GetFeature",
-#             "typeName": "DigitalGlobe:FinishedFeature",
-#             "VERSION": "1.1.0",
-#             "connectId": CONNECTID,
-#             "srsName": crs,
-#             "CQL_Filter": query,
-#         }
+        bounds = geometry.bounds
 
-#         BASE_URL = f"https://evwhs.digitalglobe.com/catalogservice/wfsaccess"
+        CONNECTID = "d56487b0-b430-4342-9244-d24c2e2d289b"
+        crs = "EPSG:4326"
+        # WFS requires bbox minimum Y, minimum X, maximum Y, and maximum X
+        bounding_box = f"{bounds[1]},{bounds[0]},{bounds[3]},{bounds[2]}"
+        CQL_QUERY = [
+            {"key": "cloudCover", "value": "<0.10", "type": "inequality"},
+            {"key": "formattedDate", "value": f">'{start_date}'", "type": "inequality"},
+            {"key": "BBOX", "value": f"geometry,{bounding_box}", "type": "compound"},
+        ]
+        query = _construct_cql(CQL_QUERY)
 
-#         resp = requests.get(BASE_URL, params=params)
-#         result = xmltodict.parse(resp.text)
+        params = {
+            "SERVICE": "WFS",
+            "REQUEST": "GetFeature",
+            "typeName": "DigitalGlobe:FinishedFeature",
+            "VERSION": "1.1.0",
+            "connectId": CONNECTID,
+            "srsName": crs,
+            "CQL_Filter": query,
+        }
 
-#         return [
-#             {"image_id": i["@gml:id"], "timestamp": i["DigitalGlobe:acquisitionDate"]}
-#             for i in result["wfs:FeatureCollection"]["gml:featureMembers"][
-#                 "DigitalGlobe:FinishedFeature"
-#             ]
-#         ]
+        BASE_URL = f"https://evwhs.digitalglobe.com/catalogservice/wfsaccess"
 
-#     def download_imagery(
-#         self,
-#         prepost: str,
-#         image_id: str,
-#         temp_dir: str,
-#         out_dir: str,
-#         geometry: Polygon,
-#         job_id: str,
-#     ) -> int:
-#         """
-#         Take in the URL for a tile server and save the raster to disk
+        resp = requests.get(BASE_URL, params=params)
+        result = xmltodict.parse(resp.text)
 
-#         Parameters:
-#             tile_source (str): the URL to the tile server
-#             prepost: (str) whether or not the tile server URL is of pre or post-disaster imagery
+        return [
+            {"image_id": i["@gml:id"], "timestamp": i["DigitalGlobe:acquisitionDate"]}
+            for i in result["wfs:FeatureCollection"]["gml:featureMembers"][
+                "DigitalGlobe:FinishedFeature"
+            ]
+        ]
 
-#         Returns:
-#             ret_counter (int): how many tiles failed to download
-#         """
+    def download_imagery(
+        self,
+        prepost: str,
+        image_id: str,
+        temp_dir: str,
+        out_dir: str,
+        geometry: Polygon,
+        job_id: str,
+    ) -> int:
+        """
+        Take in the URL for a tile server and save the raster to disk
 
-#         # url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
-#         url = f"https://evwhs.digitalglobe.com/earthservice/wmtsaccess?CONNECTID={os.getenv('MAXAR_API_KEY')}&SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&TILEMATRIXSET=EPSG:4326&LAYER=DigitalGlobe:ImageryTileService&FORMAT=image/png&TILEMATRIX=EPSG:4326:{{z}}&TILEROW={{x}}&TILECOL={{y}}&FEATUREPROFILE=Global_Currency_Profile&&featureId={image_id}"
+        Parameters:
+            tile_source (str): the URL to the tile server
+            prepost: (str) whether or not the tile server URL is of pre or post-disaster imagery
 
-#         lon_min = self.bounding_box.start_lon
-#         lat_min = self.bounding_box.end_lat
-#         lon_max = self.bounding_box.end_lon
-#         lat_max = self.bounding_box.start_lat
+        Returns:
+            ret_counter (int): how many tiles failed to download
+        """
 
-#         # Script start:
-#         self.temp_dir.mkdir(parents=True, exist_ok=True)
-#         self.output_dir.mkdir(parents=True, exist_ok=True)
+        # url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
+        url = f"https://evwhs.digitalglobe.com/earthservice/wmtsaccess?CONNECTID={os.getenv('MAXAR_API_KEY')}&SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&TILEMATRIXSET=EPSG:4326&LAYER=DigitalGlobe:ImageryTileService&FORMAT=image/png&TILEMATRIX=EPSG:4326:{{z}}&TILEROW={{x}}&TILECOL={{y}}&FEATUREPROFILE=Global_Currency_Profile&&featureId={image_id}"
 
-#         x_min, x_max, y_min, y_max = bbox_to_xyz(
-#             lon_min, lon_max, lat_min, lat_max, self.zoom
-#         )
-#         print(
-#             f"Fetching & georeferencing {(x_max - x_min + 1) * (y_max - y_min + 1)} tiles for {url}"
-#         )
+        # WMS requires bbox in minimum X, minimum Y, maximum X, and maximum Y
+        lon_min = self.bounding_box.start_lon
+        lat_min = self.bounding_box.end_lat
+        lon_max = self.bounding_box.end_lon
+        lat_max = self.bounding_box.start_lat
 
-#         ret_counter = 0
-#         for x in range(x_min, x_max + 1):
-#             for y in range(y_min, y_max + 1):
-#                 try:
-#                     png_path = self.fetch_tile(x, y, self.zoom, url)
-#                     self.georeference_raster_tile(x, y, self.zoom, png_path)
-#                 except OSError:
-#                     print(f"Error, failed to get {x},{y}")
-#                     ret_counter += 1
-#                     pass
+        # Script start:
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
-#         print("Resolving and georeferencing of raster tiles complete")
+        x_min, x_max, y_min, y_max = bbox_to_xyz(
+            lon_min, lon_max, lat_min, lat_max, self.zoom
+        )
+        print(
+            f"Fetching & georeferencing {(x_max - x_min + 1) * (y_max - y_min + 1)} tiles for {url}"
+        )
 
-#         # Todo: Should we just allow xV2 to do this?
-#         print("Merging tiles")
-#         self.merge_tiles(
-#             (self.temp_dir / "*.tif").as_posix(),
-#             self.output_dir
-#             / self.job_id
-#             / prepost
-#             / f"{self.job_id}_{prepost}_merged.tif",
-#         )
-#         print("Merge complete")
+        ret_counter = 0
+        for x in range(x_min, x_max + 1):
+            for y in range(y_min, y_max + 1):
+                try:
+                    png_path = self.fetch_tile(x, y, self.zoom, url)
+                    self.georeference_raster_tile(x, y, self.zoom, png_path)
+                except OSError:
+                    print(f"Error, failed to get {x},{y}")
+                    ret_counter += 1
+                    pass
 
-#         shutil.rmtree(self.temp_dir)
+        print("Resolving and georeferencing of raster tiles complete")
 
-#         return ret_counter
+        # Todo: Should we just allow xV2 to do this?
+        print("Merging tiles")
+        self.merge_tiles(
+            (self.temp_dir / "*.tif").as_posix(),
+            self.output_dir
+            / self.job_id
+            / prepost
+            / f"{self.job_id}_{prepost}_merged.tif",
+        )
+        print("Merge complete")
+
+        shutil.rmtree(self.temp_dir)
+
+        return ret_counter
 
 
 class PlanetIM(Imagery):
