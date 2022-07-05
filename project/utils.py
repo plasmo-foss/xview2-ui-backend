@@ -14,6 +14,8 @@ from abc import ABC, abstractmethod
 from dotenv import load_dotenv
 from osgeo import gdal
 from decimal import Decimal
+from rasterio.warp import calculate_default_transform
+from rasterio.crs import CRS
 from requests.auth import HTTPBasicAuth
 from shapely.geometry import MultiPolygon, Polygon, mapping
 from schemas import Coordinate
@@ -37,7 +39,7 @@ class Imagery(ABC):
     ) -> str:
 
         tmp_path = tmp_path / job_id / pre_post
-        out_path = out_path
+        out_path = out_path / job_id / pre_post
 
         tmp_path.mkdir(parents=True, exist_ok=True)
         out_path.mkdir(parents=True, exist_ok=True)
@@ -49,6 +51,29 @@ class Imagery(ABC):
         shutil.rmtree(tmp_path)
 
         return str(result)
+
+    def calculate_dims(self, coords: tuple, res: float = 0.5) -> tuple:
+        """Calculates height and width of raster given bounds and resolution
+
+        Args:
+            coords (tuple): bounds of input geometry
+            res (float): resolution of resulting raster
+
+        Returns:
+            tuple: height/width of raster
+        """
+        dims = calculate_default_transform(
+            CRS({"init": "EPSG:4326"}),
+            CRS({"init": "EPSG:3587"}),
+            10000,
+            10000,
+            left=coords[0],
+            bottom=coords[1],
+            right=coords[2],
+            top=coords[3],
+            resolution=res,
+        )
+        return (dims[1], dims[2])
 
     def tile_edges(self, x, y, z):
         lat1, lat2 = y_to_lat_edges(y, z)
@@ -122,7 +147,6 @@ class MAXARIM(Imagery):
     def get_imagery_list(
         self, geometry: Polygon, start_date: str, end_date: str
     ) -> list:
-
         def _construct_cql(cql_list):
 
             t = []
@@ -139,7 +163,6 @@ class MAXARIM(Imagery):
 
         bounds = geometry.bounds
 
-        CONNECTID = "d56487b0-b430-4342-9244-d24c2e2d289b"
         crs = "EPSG:4326"
         # WFS requires bbox minimum Y, minimum X, maximum Y, and maximum X
         bounding_box = f"{bounds[1]},{bounds[0]},{bounds[3]},{bounds[2]}"
@@ -155,7 +178,7 @@ class MAXARIM(Imagery):
             "REQUEST": "GetFeature",
             "typeName": "DigitalGlobe:FinishedFeature",
             "VERSION": "1.1.0",
-            "connectId": CONNECTID,
+            "connectId": self.api_key,
             "srsName": crs,
             "CQL_Filter": query,
         }
@@ -174,13 +197,13 @@ class MAXARIM(Imagery):
 
     def download_imagery(
         self,
+        job_id: str,
         prepost: str,
         image_id: str,
+        geometry: Polygon,
         temp_dir: str,
         out_dir: str,
-        geometry: Polygon,
-        job_id: str,
-    ) -> int:
+    ) -> bool:
         """
         Take in the URL for a tile server and save the raster to disk
 
@@ -192,53 +215,17 @@ class MAXARIM(Imagery):
             ret_counter (int): how many tiles failed to download
         """
 
-        # url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
-        url = f"https://evwhs.digitalglobe.com/earthservice/wmtsaccess?CONNECTID={os.getenv('MAXAR_API_KEY')}&SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&TILEMATRIXSET=EPSG:4326&LAYER=DigitalGlobe:ImageryTileService&FORMAT=image/png&TILEMATRIX=EPSG:4326:{{z}}&TILEROW={{x}}&TILECOL={{y}}&FEATUREPROFILE=Global_Currency_Profile&&featureId={image_id}"
-
         # WMS requires bbox in minimum X, minimum Y, maximum X, and maximum Y
-        lon_min = self.bounding_box.start_lon
-        lat_min = self.bounding_box.end_lat
-        lon_max = self.bounding_box.end_lon
-        lat_max = self.bounding_box.start_lat
+        bounds = geometry.bounds
+        bounding_box = f"{bounds[0]},{bounds[1]},{bounds[2]},{bounds[3]}"
 
-        # Script start:
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        height, width = self.calculate_dims(bounds)
 
-        x_min, x_max, y_min, y_max = bbox_to_xyz(
-            lon_min, lon_max, lat_min, lat_max, self.zoom
-        )
-        print(
-            f"Fetching & georeferencing {(x_max - x_min + 1) * (y_max - y_min + 1)} tiles for {url}"
-        )
+        url = f"https://evwhs.digitalglobe.com/mapservice/wmsaccess?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=DigitalGlobe:Imagery&FORMAT=image/geotiff&HEIGHT={height}&WIDTH={width}&CONNECTID={self.api_key}&FEATUREPROFILE=Default_Profile&COVERAGE_CQL_FILTER=featureId='{image_id}'&CRS=EPSG:4326&BBOX={bounding_box}"
 
-        ret_counter = 0
-        for x in range(x_min, x_max + 1):
-            for y in range(y_min, y_max + 1):
-                try:
-                    png_path = self.fetch_tile(x, y, self.zoom, url)
-                    self.georeference_raster_tile(x, y, self.zoom, png_path)
-                except OSError:
-                    print(f"Error, failed to get {x},{y}")
-                    ret_counter += 1
-                    pass
+        urllib.request.urlretrieve(url, out_dir / f"{job_id}.tif")
 
-        print("Resolving and georeferencing of raster tiles complete")
-
-        # Todo: Should we just allow xV2 to do this?
-        print("Merging tiles")
-        self.merge_tiles(
-            (self.temp_dir / "*.tif").as_posix(),
-            self.output_dir
-            / self.job_id
-            / prepost
-            / f"{self.job_id}_{prepost}_merged.tif",
-        )
-        print("Merge complete")
-
-        shutil.rmtree(self.temp_dir)
-
-        return ret_counter
+        return
 
 
 class PlanetIM(Imagery):
