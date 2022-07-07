@@ -23,10 +23,28 @@ from tileserverutils import bbox_to_xyz, x_to_lon_edges, y_to_lat_edges
 
 
 class Imagery(ABC):
-    """Base class for creating imagery providers. Providers are required to provide a get_imagery_list and download_imagery method."""
+    """Base class for creating imagery providers. Providers are required to provide a get_imagery_list and download_imagery method. See abstract methods for requirements"""
 
     def __init__(self, api_key: str):
         self.api_key = api_key
+        self.provider = None
+        self.item_type = None
+
+    def get_imagery_list_helper(
+        self, geometry: Polygon, start_date: str, end_date: str
+    ) -> list:
+        timestamps, images, urls = self.get_imagery_list(geometry, start_date, end_date)
+
+        return [
+            {
+                "timestamp": i[0],
+                "item_type": self.item_type,
+                "item_id": i[1],
+                "provider": self.provider,
+                "url": i[2],
+            }
+            for i in zip(timestamps, images, urls)
+        ]
 
     def download_imagery_helper(
         self,
@@ -119,6 +137,9 @@ class Imagery(ABC):
             geometry (tuple): geometry of AOI
             start_date (str): beginning date to search for imagery
             end_date (str): end date to search for imagery
+
+        Returns:
+            tuple: tuple of three lists of timestamps, image_ids, and urls
         """
         pass
 
@@ -144,9 +165,14 @@ class Imagery(ABC):
 
 # Todo: Not working pending reply from MAXAR support on fetching images
 class MAXARIM(Imagery):
+    def __init__(self, api_key: str) -> None:
+        super().__init__(api_key)
+        self.provider = "MAXAR"
+        self.item_type = "DG_Feature"
+
     def get_imagery_list(
         self, geometry: Polygon, start_date: str, end_date: str
-    ) -> list:
+    ) -> tuple:
         def _construct_cql(cql_list):
 
             t = []
@@ -188,12 +214,26 @@ class MAXARIM(Imagery):
         resp = requests.get(BASE_URL, params=params)
         result = xmltodict.parse(resp.text)
 
-        return [
-            {"image_id": i["@gml:id"], "timestamp": i["DigitalGlobe:acquisitionDate"]}
+        timestamps = [
+            i["DigitalGlobe:acquisitionDate"]
             for i in result["wfs:FeatureCollection"]["gml:featureMembers"][
                 "DigitalGlobe:FinishedFeature"
             ]
         ]
+        images = [
+            i["@gml:id"]
+            for i in result["wfs:FeatureCollection"]["gml:featureMembers"][
+                "DigitalGlobe:FinishedFeature"
+            ]
+        ]
+        urls = [
+            i["DigitalGlobe:url"]
+            for i in result["wfs:FeatureCollection"]["gml:featureMembers"][
+                "DigitalGlobe:FinishedFeature"
+            ]
+        ]
+
+        return timestamps, images, urls
 
     def download_imagery(
         self,
@@ -229,6 +269,11 @@ class MAXARIM(Imagery):
 
 
 class PlanetIM(Imagery):
+    def __init__(self, api_key: str) -> None:
+        super().__init__(api_key)
+        self.provider = "Planet"
+        self.item_type = "SkySatCollect"
+
     def get_imagery_list(
         self, geometry: Polygon, start_date: str, end_date: str
     ) -> list:
@@ -253,15 +298,11 @@ class PlanetIM(Imagery):
 
         # Todo: check that items contains records
 
-        # items_iter returns an iterator over API response pages
-        return [
-            {
-                "item_id": i["id"],
-                "timestamp": i["properties"]["published"],
-                "item_type": "SkySatCollect",
-            }
-            for i in items
-        ]
+        timestamps = [i["properties"]["published"] for i in items]
+        images = [i["id"] for i in items]
+        urls = []
+
+        return timestamps, images, urls
 
     def download_imagery(
         self,
