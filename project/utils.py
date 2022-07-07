@@ -33,6 +33,17 @@ class Imagery(ABC):
     def get_imagery_list_helper(
         self, geometry: Polygon, start_date: str, end_date: str
     ) -> list:
+        """searches imagery provider and returns list of suitable imagery ids
+
+        Args:
+            geometry (Polygon): geometry of AOI
+            start_date (str): earliest date of imagery
+            end_date (str): latest date of imagery
+
+        Returns:
+            list: list of dictionaries containing timestamp, item_id, item_type, provider, and url
+        """
+
         timestamps, images, urls = self.get_imagery_list(geometry, start_date, end_date)
 
         return [
@@ -54,10 +65,22 @@ class Imagery(ABC):
         geometry: Polygon,
         tmp_path: Path,
         out_path: Path,
-    ) -> str:
+    ) -> Path:
+        """helper for downloading imagery
+
+        Args:
+            job_id (str): id of job
+            pre_post (str): whether we are downloading pre or post imagery
+            image_id (str): id of image to download from provider
+            geometry (Polygon): geometry of AOI
+            tmp_path (Path): temporary path to use for downloading. Note: this gets deleted
+            out_path (Path): output directory for saved image
+
+        Returns:
+            Path: path to saved image
+        """
 
         tmp_path = tmp_path / job_id / pre_post
-        out_path = out_path / job_id / pre_post
 
         tmp_path.mkdir(parents=True, exist_ok=True)
         out_path.mkdir(parents=True, exist_ok=True)
@@ -68,7 +91,7 @@ class Imagery(ABC):
 
         shutil.rmtree(tmp_path)
 
-        return str(result)
+        return result
 
     def calculate_dims(self, coords: tuple, res: float = 0.5) -> tuple:
         """Calculates height and width of raster given bounds and resolution
@@ -152,14 +175,22 @@ class Imagery(ABC):
         geometry: Polygon,
         tmp_path: Path,
         out_path: Path,
-    ) -> str:
+    ) -> Path:
         """Downloads selected imagery from provider
 
         Args:
-            job_id (str): _description_
-            pre_post (str): _description_
-            image_id (str): _description_
+            job_id (str): id of job
+            pre_post (str): whether this is pre or post imagery
+            image_id (str): image_id of feature to retrieve from provider
+            geometry (Polygon): polygon of AOI
+            tmp_path (Path): temp path to use for downloading functions
+            out_path (Path): out path to same final image
+
+        Returns:
+            Path: file name of saved file
         """
+        # output file should follow the template below (use the appropriate file extension)
+        # out_file = out_dir / f"{job_id}_{prepost}.tif"
         pass
 
 
@@ -262,10 +293,11 @@ class MAXARIM(Imagery):
         height, width = self.calculate_dims(bounds)
 
         url = f"https://evwhs.digitalglobe.com/mapservice/wmsaccess?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=DigitalGlobe:Imagery&FORMAT=image/geotiff&HEIGHT={height}&WIDTH={width}&CONNECTID={self.api_key}&FEATUREPROFILE=Default_Profile&COVERAGE_CQL_FILTER=featureId='{image_id}'&CRS=EPSG:4326&BBOX={bounding_box}"
+        out_file = out_dir / f"{job_id}_{prepost}.tif"
 
-        urllib.request.urlretrieve(url, out_dir / f"{job_id}.tif")
+        urllib.request.urlretrieve(url, out_file)
 
-        return
+        return out_file
 
 
 class PlanetIM(Imagery):
@@ -311,7 +343,7 @@ class PlanetIM(Imagery):
         image_id: str,
         geometry: Polygon,
         tmp_path: Path,
-        out_path: Path,
+        out_dir: Path,
     ) -> str:
         """
         Take in the URL for a tile server and save the raster to disk
@@ -358,10 +390,11 @@ class PlanetIM(Imagery):
 
         # Todo: Should we just allow xV2 to do this?
         print("Merging tiles")
-        self.merge_tiles((tmp_path / "*.tif").as_posix(), out_path)
+        out_file = out_dir / f"{job_id}_{pre_post}.tif"
+        self.merge_tiles((tmp_path / "*.tif").as_posix(), out_file)
         print("Merge complete")
 
-        return ret_counter
+        return out_file
 
 
 def order_coordinate(coordinate: Coordinate) -> Coordinate:
