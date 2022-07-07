@@ -180,27 +180,49 @@ def launch_assessment(body: LaunchAssessment):
     coords = fetch_coordinates(body.job_id)
     bounding_box = create_bounding_box_poly(coords)
 
-    converter = PlanetIM(os.getenv("PLANET_API_KEY"))
-
-    for pre_post in ["pre", "post"]:
-
-        if pre_post == "pre":
-            image = body.pre_image_id
-        else:
-            image = body.post_image_id
-
-        # Todo: celery-ize this...well maybe later...don't think we can pass the converter object through serialization
-        # Expects a shapely polygon to allow geometries other than rectangles at some point
-        ret_counter = converter.download_imagery_helper(body.job_id, pre_post, image, bounding_box, Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")), Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")))
-
-    # Prepare our args for fetching OSM data
-    bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
+    pre_path = (Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR"))
+        / body.job_id
+        / "pre"
+    )
+    post_path = (Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR"))
+        / body.job_id
+        / "post"
+    )
     osm_out_path = (
-        converter.output_dir
+        Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR"))
         / converter.job_id
         / "in_polys"
-        / f"{converter.job_id}_osm_poly.geojson"
-    ).resolve()
+        / f"{converter.job_id}_osm_poly.geojson".resolve()
+    )
+
+    converter = PlanetIM(os.getenv("PLANET_API_KEY"))
+
+    # Todo: celery-ize this...well maybe later...don't think we can pass the converter object through serialization
+    # Expects a shapely polygon to allow geometries other than rectangles at some point
+    # fetch pre imagery
+    pre_file_path = converter.download_imagery_helper(
+        body.job_id,
+        "pre",
+        body.pre_image_id,
+        bounding_box,
+        Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
+        pre_path
+    )
+
+    # fetch post imagery
+    post_file_path = converter.download_imagery_helper(
+        body.job_id,
+        "post",
+        body.post_image_id,
+        bounding_box,
+        Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
+        post_path
+        )
+
+    # Prepare our args for fetching OSM data
+    # Todo: this is already done above
+    bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
+
     osm_out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Prepare our args for xv2 run
