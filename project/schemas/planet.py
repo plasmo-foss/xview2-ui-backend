@@ -12,12 +12,14 @@ class Planet(BaseModel):
                 "timestamp": "2022-04-07T21:05:38Z",
                 "item_type": "SkySatCollect",
                 "item_id": "20220407_120032_ssc6_u0001",
+                "provider": "Planet",
                 "url": "https://tile{1-3}...."
             },
             {
                 "timestamp": "2022-04-04T11:57:06Z",
                 "item_type": "SkySatCollect",
                 "item_id": "20220404_083931_ssc4_u0001",
+                "provider": "Planet",
                 "url": "Leaflet/Deck.gl compatible url"
             },
         ],
