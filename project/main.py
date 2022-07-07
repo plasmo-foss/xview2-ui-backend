@@ -150,7 +150,7 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
 
     converter = PlanetIM(os.getenv("PLANET_API_KEY"))
 
-    imagery_list = converter.get_imagery_list(bounding_box, start_date, end_date)
+    imagery_list = converter.get_imagery_list_helper(bounding_box, start_date, end_date)
 
     ddb.Table("xview2-ui-planet-api").put_item(
         Item={"uid": str(body.job_id), "planet_response": imagery_list}
