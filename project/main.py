@@ -236,6 +236,12 @@ def launch_assessment(body: LaunchAssessment):
     # Todo: check that we got polygons before we write the file, and make sure we have the file before we pass it as an arg
     args += ["--bldg_polys", str(osm_out_path)]
 
+    # Todo(epound) to run on celery
+    # send pre/post/poly to working dir (or aws bucket?) -- perhaps use rsync??
+    # mount output bucket (and pre/post/poly if using AWS bucket)
+    # run inference -- output should be synced to bucket using mount
+    # delete input files on UI node (and aws bucket if using)
+
     # Run our celery tasks
     infer = (
         get_osm_polys.s(converter.job_id, str(osm_out_path), bbox)
@@ -258,7 +264,7 @@ def launch_assessment(body: LaunchAssessment):
         Item={"uid": str(body.job_id), "status": "running_assessment"}
     )
 
-    return ret_counter
+    return
 
 
 @app.get("/fetch-assessment")
