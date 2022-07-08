@@ -89,7 +89,7 @@ class Imagery(ABC):
             job_id, pre_post, image_id, geometry, tmp_path, out_path
         )
 
-        shutil.rmtree(tmp_path)
+        shutil.rmtree(tmp_path.parent)
 
         return result
 
@@ -135,16 +135,16 @@ class Imagery(ABC):
         urllib.request.urlretrieve(url, path)
         return path
 
-    def merge_tiles(self, input_pattern, output_path):
+    def merge_tiles(self, input_pattern, output_path, tmp_path):
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        vrt_path = self.temp_dir / "tiles.vrt"
+        vrt_path = tmp_path / "tiles.vrt"
         gdal.BuildVRT(vrt_path.as_posix(), glob.glob(input_pattern))
         gdal.Translate(output_path.as_posix(), vrt_path.as_posix())
 
-    def georeference_raster_tile(self, x, y, z, path):
+    def georeference_raster_tile(self, x, y, z, path, tmp_path):
         bounds = self.tile_edges(x, y, z)
         gdal.Translate(
-            (self.temp_dir / f"{x}_{y}_{z}.tif").as_posix(),
+            (tmp_path / f"{x}_{y}_{z}.tif").as_posix(),
             path,
             outputSRS="EPSG:4326",
             outputBounds=bounds,
@@ -332,7 +332,7 @@ class PlanetIM(Imagery):
 
         timestamps = [i["properties"]["published"] for i in items]
         images = [i["id"] for i in items]
-        urls = []
+        urls = [i["_links"]["assets"] for i in items] # Todo: this is not the url to the resource...just to the endpoint to get the url(s)
 
         return timestamps, images, urls
 
@@ -380,7 +380,7 @@ class PlanetIM(Imagery):
             for y in range(y_min, y_max + 1):
                 try:
                     png_path = self.fetch_tile(x, y, zoom, url, tmp_path)
-                    self.georeference_raster_tile(x, y, zoom, png_path)
+                    self.georeference_raster_tile(x, y, zoom, png_path, tmp_path)
                 except OSError:
                     print(f"Error, failed to get {x},{y}")
                     ret_counter += 1
@@ -391,7 +391,7 @@ class PlanetIM(Imagery):
         # Todo: Should we just allow xV2 to do this?
         print("Merging tiles")
         out_file = out_dir / f"{job_id}_{pre_post}.tif"
-        self.merge_tiles((tmp_path / "*.tif").as_posix(), out_file)
+        self.merge_tiles((tmp_path / "*.tif").as_posix(), out_file, tmp_path)
         print("Merge complete")
 
         return out_file
