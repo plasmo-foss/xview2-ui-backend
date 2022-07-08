@@ -1,3 +1,11 @@
+# helpers
+scratch_*
+*cache*
+scratch/*
+
+# docker volumes
+docker/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
