@@ -180,25 +180,18 @@ def launch_assessment(body: LaunchAssessment):
     coords = fetch_coordinates(body.job_id)
     bounding_box = create_bounding_box_poly(coords)
 
-    pre_path = (Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR"))
-        / body.job_id
-        / "pre"
-    )
-    post_path = (Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR"))
-        / body.job_id
-        / "post"
-    )
-    osm_out_path = (
-        Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR"))
-        / converter.job_id
-        / "in_polys"
-        / f"{converter.job_id}_osm_poly.geojson".resolve()
-    )
+    out_dir = Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")) / body.job_id
+
+    # Todo: these should probably not be in the output directory...perhaps they should be in 'input' or something
+    pre_path = (out_dir / "pre").resolve()
+    post_path = (out_dir / "post").resolve()
+    osm_out_path = (out_dir / "in_polys" / f"{body.job_id}_osm_poly.geojson").resolve()
 
     converter = PlanetIM(os.getenv("PLANET_API_KEY"))
 
     # Todo: celery-ize this...well maybe later...don't think we can pass the converter object through serialization
     # Expects a shapely polygon to allow geometries other than rectangles at some point
+
     # fetch pre imagery
     pre_file_path = converter.download_imagery_helper(
         body.job_id,
@@ -206,7 +199,7 @@ def launch_assessment(body: LaunchAssessment):
         body.pre_image_id,
         bounding_box,
         Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
-        pre_path
+        pre_path,
     )
 
     # fetch post imagery
@@ -216,8 +209,8 @@ def launch_assessment(body: LaunchAssessment):
         body.post_image_id,
         bounding_box,
         Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
-        post_path
-        )
+        post_path,
+    )
 
     # Prepare our args for fetching OSM data
     # Todo: this is already done above
@@ -227,34 +220,28 @@ def launch_assessment(body: LaunchAssessment):
 
     # Prepare our args for xv2 run
     args = []
-    args += ["--pre_directory", str(converter.output_dir / converter.job_id / "pre")]
-    args += ["--post_directory", str(converter.output_dir / converter.job_id / "post")]
+    args += ["--pre_directory", str(pre_file_path)]
+    args += ["--post_directory", str(post_file_path)]
     args += [
         "--output_directory",
-        str(converter.output_dir / converter.job_id / "output"),
+        str(out_dir),
     ]
     # Todo: check that we got polygons before we write the file, and make sure we have the file before we pass it as an arg
     args += ["--bldg_polys", str(osm_out_path)]
 
     # Todo(epound) to run on celery
-    # send pre/post/poly to working dir (or aws bucket?)
+    # send pre/post/poly to working dir (or aws bucket?) -- perhaps use rsync??
     # mount output bucket (and pre/post/poly if using AWS bucket)
     # run inference -- output should be synced to bucket using mount
     # delete input files on UI node (and aws bucket if using)
 
     # Run our celery tasks
     infer = (
-        get_osm_polys.s(converter.job_id, str(osm_out_path), bbox)
+        get_osm_polys.s(body.job_id, str(osm_out_path), bbox)
         | run_xv.si(args)
         | store_results.si(
-            str(
-                converter.output_dir
-                / converter.job_id
-                / "output"
-                / "vector"
-                / "damage.geojson"
-            ),
-            converter.job_id,
+            str(out_dir / body.job_id / "output" / "vector" / "damage.geojson"),
+            body.job_id,
         )
     )
     result = infer.apply_async()
@@ -264,7 +251,7 @@ def launch_assessment(body: LaunchAssessment):
         Item={"uid": str(body.job_id), "status": "running_assessment"}
     )
 
-    return ret_counter
+    return
 
 
 @app.get("/fetch-assessment")
