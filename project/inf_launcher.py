@@ -1,6 +1,7 @@
 import sky
 import textwrap
 
+# Todo: move this to a config file (.env)
 ACCELERATORS = {"V100": 1}
 S3_BUCKET = "xv2-outputs"
 LOCAL_SOURCE = "~/output"
@@ -55,28 +56,29 @@ def make_dag(command, gpu=False):
     return dag
 
 
-try:
-    with sky.Dag() as dag:
-        resources = sky.Resources(sky.AWS(), accelerators=ACCELERATORS)
-        task = sky.Task(setup=SETUP).set_resources(resources)
-        store = sky.Storage(name=S3_BUCKET)
-        store.add_store("S3")
-        task.set_storage_mounts({LOCAL_SOURCE: store})
+def inf_launch():
+    try:
+        with sky.Dag() as dag:
+            resources = sky.Resources(sky.AWS(), accelerators=ACCELERATORS)
+            task = sky.Task(setup=SETUP).set_resources(resources)
+            store = sky.Storage(name=S3_BUCKET)
+            store.add_store("S3")
+            task.set_storage_mounts({LOCAL_SOURCE: store})
 
-    sky.launch(
-        dag, cluster_name=CLUSTER, retry_until_up=True, idle_minutes_to_autostop=20,
-    )
+        sky.launch(
+            dag, cluster_name=CLUSTER, retry_until_up=True, idle_minutes_to_autostop=20,
+        )
 
-    sky.exec(make_dag(RUN, gpu=True), cluster_name=CLUSTER)
+        sky.exec(make_dag(RUN, gpu=True), cluster_name=CLUSTER)
 
-except:
-    pass
+    except:
+        pass
 
-finally:
-    # Teardown instance
-    # See https://github.com/sky-proj/sky/pull/978 for future use of Python API
-    handle = sky.global_user_state.get_handle_from_cluster_name(CLUSTER)
-    sky.backends.CloudVmRayBackend().teardown(handle, terminate=True)
+    finally:
+        # Teardown instance
+        # See https://github.com/sky-proj/sky/pull/978 for future use of Python API
+        handle = sky.global_user_state.get_handle_from_cluster_name(CLUSTER)
+        sky.backends.CloudVmRayBackend().teardown(handle, terminate=True)
 
 
 # job polling
