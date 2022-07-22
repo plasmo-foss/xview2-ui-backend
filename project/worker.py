@@ -11,10 +11,7 @@ import json
 import osmnx as ox
 import geopandas as gpd
 import sky
-
-# Todo: move this to a config file (.env)
-ACCELERATORS = {"V100": 4}
-USE_SPOT = False
+import inf_launcher
 
 
 celery = Celery(__name__)
@@ -25,25 +22,13 @@ celery.conf.result_backend = os.environ.get(
 
 ddb = awsddb_client()
 
-
-@celery.Task()
+@celery.task()
 def instance_launch():
-    with sky.Dag() as dag:
-        resources = sky.Resources(sky.AWS(), accelerators=ACCELERATORS)
-        task = sky.Task().set_resources(resources)
-    sky.launch(
-        dag,
-        teardown=True,
-        retry_until_up=True,
-        idle_minutes_to_autostop=2,
-        is_spot_controller_task=USE_SPOT,
-    )
+    inf_launcher.inf_launch()
 
 
-@celery.Task()
 def instance_setup():
-    
-    sky.exec('conda create --name xv --file locks/spec-file.txt')
+    pass
 
 
 @celery.task()
@@ -67,7 +52,6 @@ def get_osm_polys(
     return item
 
 
-@celery.task()
 def get_imagery():
     pass
 
