@@ -10,6 +10,11 @@ from decimal import Decimal
 import json
 import osmnx as ox
 import geopandas as gpd
+import sky
+
+# Todo: move this to a config file (.env)
+ACCELERATORS = {"V100": 4}
+USE_SPOT = False
 
 
 celery = Celery(__name__)
@@ -21,8 +26,30 @@ celery.conf.result_backend = os.environ.get(
 ddb = awsddb_client()
 
 
+@celery.Task()
+def instance_launch():
+    with sky.Dag() as dag:
+        resources = sky.Resources(sky.AWS(), accelerators=ACCELERATORS)
+        task = sky.Task().set_resources(resources)
+    sky.launch(
+        dag,
+        teardown=True,
+        retry_until_up=True,
+        idle_minutes_to_autostop=2,
+        is_spot_controller_task=USE_SPOT,
+    )
+
+
+@celery.Task()
+def instance_setup():
+    
+    sky.exec('conda create --name xv --file locks/spec-file.txt')
+
+
 @celery.task()
-def get_osm_polys(job_id: str, out_file: str, bbox: tuple, osm_tags: dict = {"building": True}) -> dict:
+def get_osm_polys(
+    job_id: str, out_file: str, bbox: tuple, osm_tags: dict = {"building": True}
+) -> dict:
 
     gdf = ox.geometries_from_bbox(bbox[0], bbox[1], bbox[2], bbox[3], tags=osm_tags)
 
@@ -33,9 +60,7 @@ def get_osm_polys(job_id: str, out_file: str, bbox: tuple, osm_tags: dict = {"bu
     item = json.loads(gdf.reset_index().to_json(), parse_float=Decimal)
     # Todo: add CRS info to geojson
 
-    ddb.Table("xview2-ui-osm-polys").put_item(
-        Item={"uid": job_id, "geojson": item}
-    )
+    ddb.Table("xview2-ui-osm-polys").put_item(Item={"uid": job_id, "geojson": item})
 
     gdf.to_file(out_file)
 
@@ -49,27 +74,33 @@ def get_imagery():
 
 @celery.task()
 def run_xv(args: list) -> None:
-    subprocess.run(['conda', 'run', '-n', 'xview2', 'python', '/home/ubuntu/xView2_FDNY/handler.py'] + args)
+    subprocess.run(
+        [
+            "conda",
+            "run",
+            "-n",
+            "xview2",
+            "python",
+            "/home/ubuntu/xView2_FDNY/handler.py",
+        ]
+        + args
+    )
 
 
 @celery.task()
 def store_results(in_file: str, job_id: str):
     gdf = gpd.read_file(in_file)
     item = json.loads(gdf.reset_index().to_json(), parse_float=Decimal)
-    
+
     # df.to_json does not output the crs currently. Existing bug filed (and PR). Stop gap until that is implemented.
     # https://github.com/geopandas/geopandas/issues/1774
     authority, code = gdf.crs.to_authority()
     ogc_crs = f"urn:ogc:def:crs:{authority}::{code}"
     item["crs"] = {"type": "name", "properties": {"name": ogc_crs}}
-    
-    ddb.Table("xview2-ui-results").put_item(
-        Item={"uid": job_id, "geojson": item}
-    )
+
+    ddb.Table("xview2-ui-results").put_item(Item={"uid": job_id, "geojson": item})
 
     # Update job status
-    ddb.Table("xview2-ui-status").put_item(
-        Item={"uid": job_id, "status": "done"}
-    )
+    ddb.Table("xview2-ui-status").put_item(Item={"uid": job_id, "status": "done"})
 
     return

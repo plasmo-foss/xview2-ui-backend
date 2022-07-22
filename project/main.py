@@ -182,7 +182,7 @@ def launch_assessment(body: LaunchAssessment):
 
     out_dir = Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")) / body.job_id
 
-    # Todo: these should probably not be in the output directory...perhaps they should be in 'input' or something
+    # Todo: these should probably not be in the output directory...perhaps they should be in 'input'
     pre_path = (out_dir / "pre").resolve()
     post_path = (out_dir / "post").resolve()
     osm_out_path = (out_dir / "in_polys" / f"{body.job_id}_osm_poly.geojson").resolve()
@@ -229,8 +229,10 @@ def launch_assessment(body: LaunchAssessment):
     # Todo: check that we got polygons before we write the file, and make sure we have the file before we pass it as an arg
     args += ["--bldg_polys", str(osm_out_path)]
 
-    # Todo(epound) to run on celery
-    # send pre/post/poly to working dir (or aws bucket?) -- perhaps use rsync??
+    # Todo(epound) to run on celery for Sky implementation
+    # Start EC2 with output mount to S3
+    # Setup environment, retrieve codebase, rsync weights
+    # Download imagery
     # mount output bucket (and pre/post/poly if using AWS bucket)
     # run inference -- output should be synced to bucket using mount
     # delete input files on UI node (and aws bucket if using)
