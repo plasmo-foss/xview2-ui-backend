@@ -28,6 +28,14 @@ SETUP = textwrap.dedent("""\
         tar -xzvf backbone_weights.tar.gz -C ~/.cache/torch/hub/checkpoints/ && rm backbone_weights.tar.gz
     }
 
+    fetch_pre_imagery() {
+        mkdir -p ~/input/pre && wget https://xv2-weights.s3.amazonaws.com/pre_mosaic.tif -P ~/input/pre/ &
+    }
+
+    fetch_post_imagery() {
+        mkdir -p ~/input/post && wget https://xv2-weights.s3.amazonaws.com/post_mosaic.tif -P ~/input/post &
+    }
+
     # Run the function in the background for parallel execution
     install &
     fetch_weights &
@@ -36,14 +44,14 @@ SETUP = textwrap.dedent("""\
     """)
 
 RUN = textwrap.dedent("""\
-    # download imagery
-    mkdir -p ~/input/pre && wget https://xv2-weights.s3.amazonaws.com/pre_mosaic.tif -P ~/input/pre/ &
-    mkdir -p ~/input/post && wget https://xv2-weights.s3.amazonaws.com/post_mosaic.tif -P ~/input/post &
     wait
     cd xView2-Vulcan
     conda run -n xv2 python handler.py --pre_directory ~/input/pre --post_directory ~/input/post --output_directory ~/output_temp/jobid
     cp -r ~/output_temp/* ~/output
     """)
+
+SETUP = "echo setup"
+RUN = "echo run"
 
 
 def make_dag(command, gpu=False):
@@ -55,12 +63,11 @@ def make_dag(command, gpu=False):
 
     return dag
 
-
 def inf_launch():
     try:
         with sky.Dag() as dag:
             resources = sky.Resources(sky.AWS(), accelerators=ACCELERATORS)
-            task = sky.Task(setup=SETUP).set_resources(resources)
+            task = sky.Task(setup=SETUP, workdir='.').set_resources(resources)
             store = sky.Storage(name=S3_BUCKET)
             store.add_store("S3")
             task.set_storage_mounts({LOCAL_SOURCE: store})
@@ -74,11 +81,14 @@ def inf_launch():
     except:
         pass
 
-    finally:
-        # Teardown instance
-        # See https://github.com/sky-proj/sky/pull/978 for future use of Python API
-        handle = sky.global_user_state.get_handle_from_cluster_name(CLUSTER)
-        sky.backends.CloudVmRayBackend().teardown(handle, terminate=True)
+    # finally:
+    #     # Teardown instance
+    #     # See https://github.com/sky-proj/sky/pull/978 for future use of Python API
+    #     handle = sky.global_user_state.get_handle_from_cluster_name(CLUSTER)
+    #     sky.backends.CloudVmRayBackend().teardown(handle, terminate=True)
+
+if __name__ == "__main__":
+    inf_launch()
 
 
 # job polling
