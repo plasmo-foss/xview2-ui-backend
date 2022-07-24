@@ -13,6 +13,8 @@ import geopandas as gpd
 import sky
 import inf_launcher
 
+from utils import PlanetIM
+
 
 celery = Celery(__name__)
 celery.conf.broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379")
@@ -21,6 +23,7 @@ celery.conf.result_backend = os.environ.get(
 )
 
 ddb = awsddb_client()
+
 
 @celery.task()
 def instance_launch():
@@ -52,6 +55,7 @@ def get_osm_polys(
     return item
 
 
+@celery.task()
 def get_imagery():
     pass
 
