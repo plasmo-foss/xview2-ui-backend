@@ -1,19 +1,17 @@
 import os
 import subprocess
-import sys
 
 from celery import Celery
-from schemas.osmgeojson import OsmGeoJson
-from schemas.routes import SearchOsmPolygons
 from utils import order_coordinate, osm_geom_to_poly_geojson, awsddb_client
 from decimal import Decimal
 import json
 import osmnx as ox
 import geopandas as gpd
-import sky
 import inf_launcher
 
-from utils import PlanetIM
+from imagery import PlanetIM
+
+# Todo: Add flower task monitoring
 
 
 celery = Celery(__name__)
@@ -43,6 +41,7 @@ def get_osm_polys(
 
     cols = ["geometry", "osmid"]
     gdf = gdf.reset_index()
+    # BUG: This breaks if there are no polygons
     gdf = gdf.loc[gdf.element_type != "node", cols]
 
     item = json.loads(gdf.reset_index().to_json(), parse_float=Decimal)
