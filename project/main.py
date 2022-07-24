@@ -175,7 +175,7 @@ def launch_assessment(body: LaunchAssessment):
     coords = fetch_coordinates(body.job_id)
     bounding_box = create_bounding_box_poly(coords)
 
-    out_dir = Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")) / body.job_id
+    out_dir = Path(os.getenv("IMAGERY_OUTPUT_DIR")) / body.job_id
 
     # Todo: these should probably not be in the output directory...perhaps they should be in 'input'
     pre_path = (out_dir / "pre").resolve()
@@ -193,7 +193,7 @@ def launch_assessment(body: LaunchAssessment):
         "pre",
         body.pre_image_id,
         bounding_box,
-        Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
+        Path(os.getenv("IMAGERY_TEMP_DIR")),
         pre_path,
     )
 
@@ -203,7 +203,7 @@ def launch_assessment(body: LaunchAssessment):
         "post",
         body.post_image_id,
         bounding_box,
-        Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
+        Path(os.getenv("IMAGERY_TEMP_DIR")),
         post_path,
     )
 
