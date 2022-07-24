@@ -1,5 +1,5 @@
 import pytest
-from ..project.utils import MAXARIM
+from ..project.imagery import MAXARIM
 
 class TestMaxar:
     assert False

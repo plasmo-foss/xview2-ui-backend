@@ -22,14 +22,9 @@ from schemas import (
     Planet,
     SearchOsmPolygons,
 )
+from utils import create_bounding_box_poly, order_coordinate, awsddb_client
 
-from utils import (
-    PlanetIM,
-    # MAXARIM,
-    create_bounding_box_poly,
-    order_coordinate,
-    awsddb_client,
-)
+from imagery import PlanetIM#, MAXARIM,
 from worker import get_osm_polys, run_xv, store_results, instance_launch
 
 
@@ -239,8 +234,8 @@ def launch_assessment(body: LaunchAssessment):
 
     # Run our celery tasks
     infer = (
-        instance_launch.s()
-        | get_osm_polys.s(body.job_id, str(osm_out_path), bbox)
+        # instance_launch.s()
+        get_osm_polys.s(body.job_id, str(osm_out_path), bbox)
         | run_xv.si(args)
         | store_results.si(
             str(out_dir / body.job_id / "output" / "vector" / "damage.geojson"),
