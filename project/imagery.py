@@ -17,7 +17,7 @@ from decimal import Decimal
 from rasterio.warp import calculate_default_transform
 from rasterio.crs import CRS
 from requests.auth import HTTPBasicAuth
-from shapely.geometry import MultiPolygon, Polygon, mapping
+from shapely.geometry import Polygon, mapping
 from schemas import Coordinate
 from utils import bbox_to_xyz, x_to_lon_edges, y_to_lat_edges
 
@@ -29,6 +29,15 @@ class Imagery(ABC):
         self.api_key = api_key
         self.provider = None
         self.item_type = None
+
+    @classmethod
+    def get_provider(cls, provider, api_key):
+        if provider == "Planet":
+            return PlanetIM(api_key)
+        elif provider == "MAXAR":
+            return MAXARIM(api_key)
+        else:
+            raise ValueError("Unsupported imagery provider provided")
 
     def get_imagery_list_helper(
         self, geometry: Polygon, start_date: str, end_date: str

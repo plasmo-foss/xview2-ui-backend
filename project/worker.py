@@ -2,14 +2,15 @@ import os
 import subprocess
 
 from celery import Celery
-from utils import order_coordinate, osm_geom_to_poly_geojson, awsddb_client
+from utils import create_bounding_box_poly
+from db import get_coordinates, awsddb_client
 from decimal import Decimal
+from imagery import Imagery
+from pathlib import Path
 import json
 import osmnx as ox
 import geopandas as gpd
 import inf_launcher
-
-from imagery import PlanetIM
 
 # Todo: Add flower task monitoring
 
@@ -55,8 +56,14 @@ def get_osm_polys(
 
 
 @celery.task()
-def get_imagery():
-    pass
+def get_imagery(job_id, pre_post, image_id, bbox, temp_path, out_path):
+    coords = get_coordinates(job_id)
+    bounding_box = create_bounding_box_poly(coords)
+
+    converter = Imagery.get_provider("Planet", os.getenv("PLANET_API_KEY"))
+    converter.download_imagery_helper(
+        job_id, pre_post, image_id, bounding_box, Path(temp_path), Path(out_path),
+    )
 
 
 @celery.task()
@@ -66,7 +73,7 @@ def run_xv(args: list) -> None:
             "conda",
             "run",
             "-n",
-            "xview2",
+            "xv2",
             "python",
             "/home/ubuntu/xView2_FDNY/handler.py",
         ]
