@@ -7,11 +7,8 @@ from pathlib import Path
 from typing import Dict, List
 import dateutil.parser
 from dateutil.relativedelta import relativedelta
-
-from celery import group, chain, chord
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
 import geopandas as gpd
 
 from schemas import (
@@ -22,10 +19,11 @@ from schemas import (
     Planet,
     SearchOsmPolygons,
 )
-from utils import create_bounding_box_poly, order_coordinate, awsddb_client
+from utils import create_bounding_box_poly, order_coordinate
+from db import awsddb_client, get_coordinates
 
-from imagery import PlanetIM#, MAXARIM,
-from worker import get_osm_polys, run_xv, store_results, instance_launch
+from imagery import Imagery
+from worker import get_osm_polys, run_xv, store_results, instance_launch, get_imagery
 
 
 def verify_key(access_key: str = Header("null")) -> bool:
@@ -86,19 +84,7 @@ def send_coordinates(coordinate: Coordinate) -> str:
 
 @app.get("/fetch-coordinates", response_model=Coordinate)
 def fetch_coordinates(job_id: str) -> Coordinate:
-
-    resp = ddb.Table("xview2-ui-coordinates").get_item(Key={"uid": job_id})
-
-    if "Item" in resp:
-        ret = resp["Item"]
-        return Coordinate(
-            start_lon=ret["start_lon"],
-            start_lat=ret["start_lat"],
-            end_lon=ret["end_lon"],
-            end_lat=ret["end_lat"],
-        )
-    else:
-        return None
+    return get_coordinates(job_id)
 
 
 @app.get("/job-status")
@@ -143,7 +129,7 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
     end_date = dateutil.parser.isoparse(body.current_date)
     start_date = end_date - relativedelta(years=1)
 
-    converter = PlanetIM(os.getenv("PLANET_API_KEY"))
+    converter = Imagery.get_provider("Planet", os.getenv("PLANET_API_KEY"))
 
     imagery_list = converter.get_imagery_list_helper(bounding_box, start_date, end_date)
 
@@ -182,41 +168,40 @@ def launch_assessment(body: LaunchAssessment):
     post_path = (out_dir / "post").resolve()
     osm_out_path = (out_dir / "in_polys" / f"{body.job_id}_osm_poly.geojson").resolve()
 
-    converter = PlanetIM(os.getenv("PLANET_API_KEY"))
-
     # Todo: celery-ize this...well maybe later...don't think we can pass the converter object through serialization
     # Expects a shapely polygon to allow geometries other than rectangles at some point
 
     # fetch pre imagery
-    pre_file_path = converter.download_imagery_helper(
-        body.job_id,
-        "pre",
-        body.pre_image_id,
-        bounding_box,
-        Path(os.getenv("IMAGERY_TEMP_DIR")),
-        pre_path,
-    )
+    # pre_file_path = converter.download_imagery_helper(
+    #     body.job_id,
+    #     "pre",
+    #     body.pre_image_id,
+    #     bounding_box,
+    #     Path(os.getenv("IMAGERY_TEMP_DIR")),
+    #     pre_path,
+    # )
 
-    # fetch post imagery
-    post_file_path = converter.download_imagery_helper(
-        body.job_id,
-        "post",
-        body.post_image_id,
-        bounding_box,
-        Path(os.getenv("IMAGERY_TEMP_DIR")),
-        post_path,
-    )
+    # # fetch post imagery
+    # post_file_path = converter.download_imagery_helper(
+    #     body.job_id,
+    #     "post",
+    #     body.post_image_id,
+    #     bounding_box,
+    #     Path(os.getenv("IMAGERY_TEMP_DIR")),
+    #     post_path,
+    # )
 
     # Prepare our args for fetching OSM data
     # Todo: this is already done above
+    # BUG: this seems backwards. Rename to north, south, east, west
     bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
 
     osm_out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Prepare our args for xv2 run
     args = []
-    args += ["--pre_directory", str(pre_file_path)]
-    args += ["--post_directory", str(post_file_path)]
+    # args += ["--pre_directory", str(pre_file_path)]
+    # args += ["--post_directory", str(post_file_path)]
     args += [
         "--output_directory",
         str(out_dir),
@@ -234,8 +219,24 @@ def launch_assessment(body: LaunchAssessment):
 
     # Run our celery tasks
     infer = (
-        # instance_launch.s()
-        get_osm_polys.s(body.job_id, str(osm_out_path), bbox)
+        # instance_launch.s(
+        get_imagery.si(
+            body.job_id,
+            "pre",
+            body.pre_image_id,
+            bbox,
+            os.getenv("IMAGERY_TEMP_DIR"),
+            str(pre_path),
+        )
+        | get_imagery.si(
+            body.job_id,
+            "post",
+            body.post_image_id,
+            bbox,
+            os.getenv("IMAGERY_TEMP_DIR"),
+            str(post_path),
+        )
+        | get_osm_polys.si(body.job_id, str(osm_out_path), bbox)
         | run_xv.si(args)
         | store_results.si(
             str(out_dir / body.job_id / "output" / "vector" / "damage.geojson"),

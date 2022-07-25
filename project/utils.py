@@ -6,7 +6,7 @@ from shapely.geometry import MultiPolygon, Polygon
 from schemas import Coordinate
 
 from math import atan, cos, degrees, floor, log, pi, radians, sinh, tan
-
+from typing import List, Tuple
 
 def sec(x):
     return 1 / cos(x)
@@ -121,14 +121,3 @@ def create_bounding_box_poly(coordinate: Coordinate) -> Polygon:
     )
     return poly
 
-
-def awsddb_client():
-    load_dotenv(override=True)
-
-    return boto3.resource(
-        "dynamodb",
-        region_name=os.getenv("DB_REGION_NAME"),
-        aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
-        endpoint_url=os.getenv("DB_ENDPOINT_URL"),
-    )
