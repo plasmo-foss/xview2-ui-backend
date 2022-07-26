@@ -23,7 +23,7 @@ from utils import create_bounding_box_poly, order_coordinate
 from db import awsddb_client, get_coordinates
 
 from imagery import Imagery
-from worker import get_osm_polys, run_xv, store_results, instance_launch, get_imagery
+from worker import get_osm_polys, run_xv, store_results, get_imagery
 
 
 def verify_key(access_key: str = Header("null")) -> bool:
@@ -220,28 +220,28 @@ def launch_assessment(body: LaunchAssessment):
     # Run our celery tasks
     infer = (
         # instance_launch.s(
-        get_imagery.si(
-            body.job_id,
-            "pre",
-            body.pre_image_id,
-            bbox,
-            os.getenv("IMAGERY_TEMP_DIR"),
-            str(pre_path),
-        )
-        | get_imagery.si(
-            body.job_id,
-            "post",
-            body.post_image_id,
-            bbox,
-            os.getenv("IMAGERY_TEMP_DIR"),
-            str(post_path),
-        )
-        | get_osm_polys.si(body.job_id, str(osm_out_path), bbox)
-        | run_xv.si(args)
-        | store_results.si(
-            str(out_dir / body.job_id / "output" / "vector" / "damage.geojson"),
-            body.job_id,
-        )
+        # get_imagery.si(
+        #     body.job_id,
+        #     "pre",
+        #     body.pre_image_id,
+        #     bbox,
+        #     os.getenv("IMAGERY_TEMP_DIR"),
+        #     str(pre_path),
+        # )
+        # | get_imagery.si(
+        #     body.job_id,
+        #     "post",
+        #     body.post_image_id,
+        #     bbox,
+        #     os.getenv("IMAGERY_TEMP_DIR"),
+        #     str(post_path),
+        # )
+        # | get_osm_polys.si(body.job_id, str(osm_out_path), bbox)
+        run_xv.si(args, body.job_id)
+        # | store_results.si(
+        #     str(out_dir / body.job_id / "output" / "vector" / "damage.geojson"),
+        #     body.job_id,
+        # )
     )
     result = infer.apply_async()
 
