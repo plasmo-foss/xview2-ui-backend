@@ -10,7 +10,7 @@ from pathlib import Path
 import json
 import osmnx as ox
 import geopandas as gpd
-import inf_launcher
+from backend import Backend
 
 # Todo: Add flower task monitoring
 
@@ -24,13 +24,14 @@ celery.conf.result_backend = os.environ.get(
 ddb = awsddb_client()
 
 
-@celery.task()
-def instance_launch():
-    inf_launcher.inf_launch()
+# @celery.task()
+# def instance_launch():
+#     b_end = Backend.get_backend("Sky")
+#     b_end.launch()
+    
 
-
-def instance_setup():
-    pass
+# def instance_setup():
+#     pass
 
 
 @celery.task()
@@ -67,20 +68,24 @@ def get_imagery(job_id, pre_post, image_id, bbox, temp_path, out_path):
 
 
 @celery.task()
-def run_xv(args: list) -> None:
-    subprocess.run(
-        [
-            "conda",
-            "run",
-            "-n",
-            "xv2",
-            "python",
-            "/home/ubuntu/xView2_FDNY/handler.py",
-        ]
-        + args
-    )
+def run_xv(args: list, job_id: str) -> None:
+    b_end = Backend.get_backend("Sky")
+    b_end.launch('xv2-outputs', "~/output", job_id)
+
+    # subprocess.run(
+    #     [
+    #         "conda",
+    #         "run",
+    #         "-n",
+    #         "xv2",
+    #         "python",
+    #         "/home/ubuntu/xView2_FDNY/handler.py",
+    #     ]
+    #     + args
+    # )
 
 
+# FIXME...this won't work with Sky
 @celery.task()
 def store_results(in_file: str, job_id: str):
     gdf = gpd.read_file(in_file)
