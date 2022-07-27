@@ -434,5 +434,3 @@ class PlanetIM(Imagery):
         print("Merge complete")
 
         return out_file
-
-
