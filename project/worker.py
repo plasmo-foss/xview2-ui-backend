@@ -28,7 +28,7 @@ ddb = awsddb_client()
 # def instance_launch():
 #     b_end = Backend.get_backend("Sky")
 #     b_end.launch()
-    
+
 
 # def instance_setup():
 #     pass
@@ -61,16 +61,23 @@ def get_imagery(job_id, pre_post, image_id, bbox, temp_path, out_path):
     coords = get_coordinates(job_id)
     bounding_box = create_bounding_box_poly(coords)
 
-    converter = Imagery.get_provider("Planet", os.getenv("PLANET_API_KEY"))
+    converter = Imagery.get_provider(
+        os.getenv("IMG_PROVIDER"), os.getenv("PLANET_API_KEY")
+    )
     converter.download_imagery_helper(
         job_id, pre_post, image_id, bounding_box, Path(temp_path), Path(out_path),
     )
 
 
 @celery.task()
-def run_xv(args: list, job_id: str) -> None:
-    b_end = Backend.get_backend("Sky")
-    b_end.launch('xv2-outputs', "~/output", job_id)
+def run_xv(
+    args: list, job_id: str, pre_image_id: str, post_image_id: str, get_osm: bool,
+) -> None:
+
+    b_end = Backend.get_backend(os.getenv("BACKEND"))
+    b_end.launch(
+        "xv2-outputs", job_id, pre_image_id, post_image_id, img_provider=os.getenv("IMG_PROVIDER")
+    )
 
     # subprocess.run(
     #     [
@@ -85,7 +92,7 @@ def run_xv(args: list, job_id: str) -> None:
     # )
 
 
-# FIXME...this won't work with Sky
+# FIXME...this won't as is with backends work with Sky
 @celery.task()
 def store_results(in_file: str, job_id: str):
     gdf = gpd.read_file(in_file)

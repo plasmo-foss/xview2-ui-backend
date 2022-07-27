@@ -129,7 +129,9 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
     end_date = dateutil.parser.isoparse(body.current_date)
     start_date = end_date - relativedelta(years=1)
 
-    converter = Imagery.get_provider("Planet", os.getenv("PLANET_API_KEY"))
+    converter = Imagery.get_provider(
+        os.getenv("IMG_PROVIDER"), os.getenv("PLANET_API_KEY")
+    )
 
     imagery_list = converter.get_imagery_list_helper(bounding_box, start_date, end_date)
 
@@ -161,12 +163,12 @@ def launch_assessment(body: LaunchAssessment):
     coords = fetch_coordinates(body.job_id)
     bounding_box = create_bounding_box_poly(coords)
 
-    out_dir = Path(os.getenv("IMAGERY_OUTPUT_DIR")) / body.job_id
+    # out_dir = Path(os.getenv("IMAGERY_OUTPUT_DIR")) / body.job_id
 
-    # Todo: these should probably not be in the output directory...perhaps they should be in 'input'
-    pre_path = (out_dir / "pre").resolve()
-    post_path = (out_dir / "post").resolve()
-    osm_out_path = (out_dir / "in_polys" / f"{body.job_id}_osm_poly.geojson").resolve()
+    # # Todo: these should probably not be in the output directory...perhaps they should be in 'input'
+    # pre_path = (out_dir / "pre").resolve()
+    # post_path = (out_dir / "post").resolve()
+    # osm_out_path = (out_dir / "in_polys" / f"{body.job_id}_osm_poly.geojson").resolve()
 
     # Todo: celery-ize this...well maybe later...don't think we can pass the converter object through serialization
     # Expects a shapely polygon to allow geometries other than rectangles at some point
@@ -196,18 +198,18 @@ def launch_assessment(body: LaunchAssessment):
     # BUG: this seems backwards. Rename to north, south, east, west
     bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
 
-    osm_out_path.parent.mkdir(parents=True, exist_ok=True)
+    # osm_out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Prepare our args for xv2 run
     args = []
     # args += ["--pre_directory", str(pre_file_path)]
     # args += ["--post_directory", str(post_file_path)]
-    args += [
-        "--output_directory",
-        str(out_dir),
-    ]
+    # args += [
+    #     "--output_directory",
+    #     str(out_dir),
+    # ]
     # Todo: check that we got polygons before we write the file, and make sure we have the file before we pass it as an arg
-    args += ["--bldg_polys", str(osm_out_path)]
+    # args += ["--bldg_polys", str(osm_out_path)]
 
     # Todo(epound) to run on celery for Sky implementation
     # Start EC2 with output mount to S3
@@ -237,7 +239,9 @@ def launch_assessment(body: LaunchAssessment):
         #     str(post_path),
         # )
         # | get_osm_polys.si(body.job_id, str(osm_out_path), bbox)
-        run_xv.si(args, body.job_id)
+        run_xv.si(
+            args, body.job_id, body.pre_image_id, body.post_image_id, get_osm=True
+        )
         # | store_results.si(
         #     str(out_dir / body.job_id / "output" / "vector" / "damage.geojson"),
         #     body.job_id,

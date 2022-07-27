@@ -13,19 +13,23 @@ class Backend(ABC):
         if backend == "Sky":
             return SkyML()
 
+    
+    @abstractmethod
+    def get_imagery():
+        pass
+
+
     @abstractmethod
     def launch(self):
         pass
 
 
 class SkyML(Backend):
+
     def __init__(self) -> None:
         super().__init__()
         self.provider = "Sky"
         self.ACCELERATORS = {"V100": 1}
-        # self.S3_BUCKET = "xv2-outputs"
-        # self.LOCAL_SOURCE = "~/output"
-        # self.CLUSTER = "xv2test"
 
     def _make_dag(self, command, gpu=False):
         """Wraps a command into a sky.Dag."""
@@ -44,12 +48,12 @@ class SkyML(Backend):
     def launch(
         self,
         s3_bucket: str,
-        local_mnt: str,
-        cluster_name: str,
-        pre_imagery: list,
-        post_imagery: list,
+        job_id: str,
+        pre_image_id: str,
+        post_image_id: str,
+        img_provider: str
     ):
-
+        LOCAL_MNT = "/output"
         PRE_PATH = "~/input/pre"
         POST_PATH = "~/input/post"
 
@@ -76,11 +80,11 @@ class SkyML(Backend):
             }
 
             fetch_pre_imagery() {
-                mkdir -p {PRE_PATH} && {PRE_IMG_CMD}
+                conda activate xv2 && python -c 'from imagery import Imagery;from utils import create_bounding_box_poly; from main import fetch_coordinates; poly=create_bounding_box_poly(fetch_coordinates({job_id}));cls=Imagery.get_provider("Sky");cls.download_imagery_helper({job_id}, "pre", {pre_image_id}, {polygon}, "/temp", {PRE_PATH})'
             }
 
             fetch_post_imagery() {
-                mkdir -p {POST_PATH} && {POST_IMG_CMD}
+                conda activate xv2 && mkdir -p {POST_PATH} && {POST_IMG_CMD}
             }
 
             # Run the function in the background for parallel execution
@@ -92,8 +96,9 @@ class SkyML(Backend):
                 "{PRE_PATH}", PRE_PATH
             )
             .replace("{POST_PATH}", POST_PATH)
-            .replace("{PRE_IMG_CMD}", self.get_imagery(pre_imagery, PRE_PATH))
-            .replace("{POST_IMG_CMD}", self.get_imagery(post_imagery, POST_PATH))
+            .replace("{job_id}", job_id)
+            .replace("{pre_image_id}", pre_image_id)
+            .replace("{PRE_PATH}", PRE_PATH) 
         )
 
         SETUP = textwrap.dedent(SETUP_CMD)
@@ -107,8 +112,8 @@ class SkyML(Backend):
 
         RUN = textwrap.dedent(RUN_CMD)
 
-        SETUP = "echo setup"
-        RUN = "echo run"
+        # SETUP = "echo setup"
+        # RUN = "echo run"
 
         try:
             with sky.Dag() as dag:
@@ -116,13 +121,13 @@ class SkyML(Backend):
                 task = sky.Task(setup=SETUP, workdir=".").set_resources(resources)
                 store = sky.Storage(name=s3_bucket)
                 store.add_store("S3")
-                task.set_storage_mounts({local_mnt: store})
+                task.set_storage_mounts({LOCAL_MNT: store})
 
             sky.launch(
                 dag,
-                cluster_name=f"xv2-inf-{cluster_name[-5:]}",
+                cluster_name=f"xv2-inf-{job_id[-5:]}",
                 retry_until_up=True,
-                idle_minutes_to_autostop=10,
+                idle_minutes_to_autostop=10
             )
 
             sky.exec(self._make_dag(RUN, gpu=True), cluster_name=self.CLUSTER)
