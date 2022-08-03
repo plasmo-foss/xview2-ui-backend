@@ -1,17 +1,13 @@
 import glob
 import json
-import os
 import shutil
 import urllib.request
 import xmltodict
 
-import boto3
-import geopandas as gpd
 import planet.api as api
 import requests
 from pathlib import Path
 from abc import ABC, abstractmethod
-from dotenv import load_dotenv
 from osgeo import gdal
 from decimal import Decimal
 from rasterio.warp import calculate_default_transform
@@ -341,40 +337,42 @@ class PlanetIM(Imagery):
 
         timestamps = [i["properties"]["published"] for i in items]
         images = [i["id"] for i in items]
-        urls = [i["_links"]["assets"] for i in items] # Todo: this is not the url to the resource...just to the endpoint to get the url(s)
+        urls = [
+            i["_links"]["assets"] for i in items
+        ]  # Todo: this is not the url to the resource...just to the endpoint to get the url(s)
 
         return timestamps, images, urls
 
-    def get_url_list(self, image_id, geometry):
+    # def get_url_list(self, image_id, geometry):
 
-        zoom = 18
+    #     zoom = 18
 
-        base_url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image_id}/{zoom}/{{x}}/{{y}}.png?api_key={self.api_key}"
+    #     base_url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image_id}/{zoom}/{{x}}/{{y}}.png?api_key={self.api_key}"
 
-        bounds = geometry.bounds
+    #     bounds = geometry.bounds
 
-        lon_min = bounds[0]
-        lat_min = bounds[1]
-        lon_max = bounds[2]
-        lat_max = bounds[3]
+    #     lon_min = bounds[0]
+    #     lat_min = bounds[1]
+    #     lon_max = bounds[2]
+    #     lat_max = bounds[3]
 
-        x_min, x_max, y_min, y_max = bbox_to_xyz(
-            lon_min, lon_max, lat_min, lat_max, zoom
-        )
+    #     x_min, x_max, y_min, y_max = bbox_to_xyz(
+    #         lon_min, lon_max, lat_min, lat_max, zoom
+    #     )
 
-        url_list = []
+    #     url_list = []
 
-        for x in range(x_min, x_max + 1):
-            for y in range(y_min, y_max + 1):
-                url = (
-                    base_url.replace("{x}", str(x))
-                    .replace("{y}", str(y))
-                    .replace("{z}", str(zoom))
-                )
+    #     for x in range(x_min, x_max + 1):
+    #         for y in range(y_min, y_max + 1):
+    #             url = (
+    #                 base_url.replace("{x}", str(x))
+    #                 .replace("{y}", str(y))
+    #                 .replace("{z}", str(zoom))
+    #             )
 
-                url_list.append(url)
+    #             url_list.append(url)
 
-        return url_list
+    #     return url_list
 
     def download_imagery(
         self,
@@ -434,3 +432,53 @@ class PlanetIM(Imagery):
         print("Merge complete")
 
         return out_file
+
+
+# Utilized to run imagery download on remote instances
+if __name__ == "__main__":
+    import argparse
+    from utils import create_bounding_box_poly
+
+    parser = argparse.ArgumentParser(
+        description="Create arguments for imagery handling."
+    )
+    parser.add_argument(
+        "--provider", required=True, help="Imagery provider",
+    )
+    parser.add_argument("--api_key", required=True, help="API key for imagery provider")
+    parser.add_argument(
+        "--coordinates",
+        required=True,
+        type=json.loads,
+        help="Dictionary from Coordinate object",
+    )
+    parser.add_argument("--job_id", required=True, help="Job ID")
+    parser.add_argument("--image_id", required=True, help="ID of image to retrieve")
+    parser.add_argument("--out_path", required=True, help="Path to save image(s)")
+    parser.add_argument(
+        "--temp_path", required=True, help="Path for storage of temporary files"
+    )
+    parser.add_argument(
+        "--pre_post",
+        required=True,
+        help="String indicating whether this is 'pre' or 'post' imagery",
+    )
+
+    args = parser.parse_args()
+
+    coords = Coordinate(
+        start_lon=args.coordinates["start_lon"],
+        start_lat=args.coordinates["start_lat"],
+        end_lon=args.coordinates["end_lon"],
+        end_lat=args.coordinates["end_lat"],
+    )
+    poly = create_bounding_box_poly(coords)
+
+    temp_path = Path(args.temp_path)
+    out_path = Path(args.out_path)
+
+    provider = Imagery.get_provider(args.provider, args.api_key)
+    print(provider.download_imagery_helper(
+        args.job_id, args.pre_post, args.image_id, poly, temp_path, out_path
+    ).resolve())
+

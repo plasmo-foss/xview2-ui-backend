@@ -62,7 +62,7 @@ def get_imagery(job_id, pre_post, image_id, bbox, temp_path, out_path):
     bounding_box = create_bounding_box_poly(coords)
 
     converter = Imagery.get_provider(
-        os.getenv("IMG_PROVIDER"), os.getenv("PLANET_API_KEY")
+        os.getenv("IMG_PROVIDER"), os.geten("PLANET_API_KEY")
     )
     converter.download_imagery_helper(
         job_id, pre_post, image_id, bounding_box, Path(temp_path), Path(out_path),
@@ -71,12 +71,12 @@ def get_imagery(job_id, pre_post, image_id, bbox, temp_path, out_path):
 
 @celery.task()
 def run_xv(
-    args: list, job_id: str, pre_image_id: str, post_image_id: str, get_osm: bool,
+    args: list, job_id: str, pre_image_id: str, post_image_id: str, get_osm: bool, poly_dict: dict
 ) -> None:
 
     b_end = Backend.get_backend(os.getenv("BACKEND"))
     b_end.launch(
-        "xv2-outputs", job_id, pre_image_id, post_image_id, img_provider=os.getenv("IMG_PROVIDER")
+        "xv2-outputs", job_id, pre_image_id, post_image_id, os.getenv("IMG_PROVIDER"), poly_dict
     )
 
     # subprocess.run(

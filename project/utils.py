@@ -1,7 +1,4 @@
-import os
-import boto3
 import geopandas as gpd
-from dotenv import load_dotenv
 from shapely.geometry import MultiPolygon, Polygon
 from schemas import Coordinate
 
@@ -120,4 +117,3 @@ def create_bounding_box_poly(coordinate: Coordinate) -> Polygon:
         ]
     )
     return poly
-

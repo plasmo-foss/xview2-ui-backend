@@ -2,6 +2,9 @@ import sky
 import textwrap
 from abc import ABC, abstractmethod
 import imagery
+import os
+import json
+from shapely.geometry import Polygon
 
 
 class Backend(ABC):
@@ -13,23 +16,34 @@ class Backend(ABC):
         if backend == "Sky":
             return SkyML()
 
-    
     @abstractmethod
     def get_imagery():
         pass
-
 
     @abstractmethod
     def launch(self):
         pass
 
 
+class Local(Backend):
+    # Todo: create an ansyc local inference backend
+    # When complete, simply sky.launch this class on the instance and be done :)
+    def get_imagery(self):
+        pass
+
+    def launch(self):
+        pass
+
+
 class SkyML(Backend):
+    # Todo: explore the ability to pass these methods to celery ie:
+    # cmd = (prepare, get_repo, get_imagery, get_polys) | run_xv; cmd.apply_async()
 
     def __init__(self) -> None:
         super().__init__()
         self.provider = "Sky"
         self.ACCELERATORS = {"V100": 1}
+
 
     def _make_dag(self, command, gpu=False):
         """Wraps a command into a sky.Dag."""
@@ -40,10 +54,35 @@ class SkyML(Backend):
 
         return dag
 
-    def get_imagery(self, imagery: list, out_path: str):
-        cmd = ""
-        for i in imagery:
-            cmd += f"wget {i} -P {out_path} &"
+    def get_code_base(self, repo_url: str):
+        cmd = "git clone https://github.com/RitwikGupta/xView2-Vulcan.git && conda create -n xv2 --file xView2-Vulcan/spec-file.txt"
+
+        return self._make_dag(cmd)
+
+    def get_weights(self, url: str, tmp_name: str, out_path: str):
+        cmd = f"wget {url} -O {tmp_name}\n"
+        cmd += f"mkdir -p {out_path}\n"
+        cmd += f"tar -xzvf {tmp_name} -C {out_path} && rm {tmp_name}"
+
+        return self._make_dag(cmd)
+
+    def get_imagery(
+        self,
+        img_provider: str,
+        api_key: str,
+        job_id: str,
+        image_id: str,
+        temp_path: str,
+        out_path: str,
+        poly_dict: dict,
+        pre_post: str,
+    ):
+        cmd = f"conda run -n xv2 python imagery.py --provider {img_provider} --api_key {api_key} --job_id {job_id} --image_id {image_id} --out_path {out_path} --temp_path {temp_path} --pre_post {pre_post} --coordinates {json.dumps(poly_dict).replace(' ', '')}"
+        
+        return self._make_dag(cmd)
+
+    def get_polygons(self):
+        pass
 
     def launch(
         self,
@@ -51,57 +90,43 @@ class SkyML(Backend):
         job_id: str,
         pre_image_id: str,
         post_image_id: str,
-        img_provider: str
+        img_provider: str,
+        poly_dict: dict,
     ):
         LOCAL_MNT = "/output"
-        PRE_PATH = "~/input/pre"
-        POST_PATH = "~/input/post"
+        CLUSTER_NAME = f"xv2-inf-{job_id[-5:]}"
 
-        SETUP_CMD = (
-            """\
-            # Exit if error occurs
-            set -ex
+        # SETUP_CMD = (
+        #     """\
+        #     # Exit if error occurs
+        #     set -ex
 
-            install() {
-                git clone https://github.com/RitwikGupta/xView2-Vulcan.git
-                conda create -n xv2 --file xView2-Vulcan/spec-file.txt
-            }
+        #     install() {
+        #         git clone https://github.com/RitwikGupta/xView2-Vulcan.git
+        #         conda create -n xv2 --file xView2-Vulcan/spec-file.txt
+        #     }
 
-            fetch_weights() {
-                wget https://xv2-weights.s3.amazonaws.com/first_place_weights.tar.gz
-                mkdir xView2-Vulcan/weights
-                tar -xzvf first_place_weights.tar.gz -C xView2-Vulcan/weights && rm first_place_weights.tar.gz
-            }
+        #     fetch_weights() {
+        #         wget https://xv2-weights.s3.amazonaws.com/first_place_weights.tar.gz
+        #         mkdir xView2-Vulcan/weights
+        #         tar -xzvf first_place_weights.tar.gz -C xView2-Vulcan/weights && rm first_place_weights.tar.gz
+        #     }
 
-            fetch_backbone_weights() {
-                mkdir -p ~/.cache/torch/hub/checkpoints
-                wget https://xv2-weights.s3.amazonaws.com/backbone_weights.tar.gz
-                tar -xzvf backbone_weights.tar.gz -C ~/.cache/torch/hub/checkpoints/ && rm backbone_weights.tar.gz
-            }
+        #     fetch_backbone_weights() {
+        #         mkdir -p ~/.cache/torch/hub/checkpoints
+        #         wget https://xv2-weights.s3.amazonaws.com/backbone_weights.tar.gz
+        #         tar -xzvf backbone_weights.tar.gz -C ~/.cache/torch/hub/checkpoints/ && rm backbone_weights.tar.gz
+        #     }
 
-            fetch_pre_imagery() {
-                conda activate xv2 && python -c 'from imagery import Imagery;from utils import create_bounding_box_poly; from main import fetch_coordinates; poly=create_bounding_box_poly(fetch_coordinates({job_id}));cls=Imagery.get_provider("Sky");cls.download_imagery_helper({job_id}, "pre", {pre_image_id}, {polygon}, "/temp", {PRE_PATH})'
-            }
+        #     # Run the function in the background for parallel execution
+        #     install
+        #     fetch_weights
+        #     fetch_backbone_weights
+        #     wait
+        #     """
+        # )
 
-            fetch_post_imagery() {
-                conda activate xv2 && mkdir -p {POST_PATH} && {POST_IMG_CMD}
-            }
-
-            # Run the function in the background for parallel execution
-            install &
-            fetch_weights &
-            fetch_backbone_weights &
-            wait
-            """.replace(
-                "{PRE_PATH}", PRE_PATH
-            )
-            .replace("{POST_PATH}", POST_PATH)
-            .replace("{job_id}", job_id)
-            .replace("{pre_image_id}", pre_image_id)
-            .replace("{PRE_PATH}", PRE_PATH) 
-        )
-
-        SETUP = textwrap.dedent(SETUP_CMD)
+        # SETUP = textwrap.dedent(SETUP_CMD)
 
         RUN_CMD = """\
             wait
@@ -118,19 +143,47 @@ class SkyML(Backend):
         try:
             with sky.Dag() as dag:
                 resources = sky.Resources(sky.AWS(), accelerators=self.ACCELERATORS)
-                task = sky.Task(setup=SETUP, workdir=".").set_resources(resources)
+                task = sky.Task(run="echo start", workdir=".").set_resources(resources)
                 store = sky.Storage(name=s3_bucket)
                 store.add_store("S3")
                 task.set_storage_mounts({LOCAL_MNT: store})
 
             sky.launch(
                 dag,
-                cluster_name=f"xv2-inf-{job_id[-5:]}",
+                cluster_name=CLUSTER_NAME,
                 retry_until_up=True,
-                idle_minutes_to_autostop=10
+                idle_minutes_to_autostop=60, # Todo: Change autostop time (used currently for debugging)
             )
 
-            sky.exec(self._make_dag(RUN, gpu=True), cluster_name=self.CLUSTER)
+            sky.exec(self.get_code_base("https://github.com/RitwikGupta/xView2-Vulcan.git"), cluster_name=CLUSTER_NAME)
+            # sky.exec(self.get_weights("https://xv2-weights.s3.amazonaws.com/first_place_weights.tar.gz", "~/fp_weights.tar.gz", "xView2-Vulcan/weights"), cluster_name=CLUSTER_NAME)
+            # sky.exec(self.get_weights("https://xv2-weights.s3.amazonaws.com/backbone_weights.tar.gz", "~/backbone_weights.tar.gz", "~/.cache/torch/hub/checkpoints/"), cluster_name=CLUSTER_NAME)
+
+            sky.exec(
+                self.get_imagery(
+                    img_provider,
+                    os.getenv("PLANET_API_KEY"),
+                    job_id,
+                    pre_image_id,
+                    "/temp",
+                    "/input/pre",
+                    poly_dict,
+                    "pre",
+                ),
+                cluster_name=CLUSTER_NAME,
+            )
+
+            sky.exec(self.get_imagery(
+                    img_provider,
+                    os.getenv("PLANET_API_KEY"),
+                    job_id,
+                    post_image_id,
+                    "/temp",
+                    "/input/post",
+                    poly_dict,
+                    "post",
+                ),
+                cluster_name=CLUSTER_NAME)
 
         except:
             pass

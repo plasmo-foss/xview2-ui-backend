@@ -240,7 +240,7 @@ def launch_assessment(body: LaunchAssessment):
         # )
         # | get_osm_polys.si(body.job_id, str(osm_out_path), bbox)
         run_xv.si(
-            args, body.job_id, body.pre_image_id, body.post_image_id, get_osm=True
+            args, body.job_id, body.pre_image_id, body.post_image_id, get_osm=True, poly_dict=dict(coords)
         )
         # | store_results.si(
         #     str(out_dir / body.job_id / "output" / "vector" / "damage.geojson"),
