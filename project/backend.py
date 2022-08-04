@@ -78,7 +78,8 @@ class SkyML(Backend):
         pre_post: str,
     ):
         cmd = f"conda run -n xv2 python imagery.py --provider {img_provider} --api_key {api_key} --job_id {job_id} --image_id {image_id} --out_path {out_path} --temp_path {temp_path} --pre_post {pre_post} --coordinates {json.dumps(poly_dict).replace(' ', '')}"
-        
+        # command that works!
+        # conda run -n xv2 python imagery.py --provider Planet --api_key PLAKcc6a392a192d41de8ed39504826419ec --job_id 70c560e1-c10e-42e9-b99f-c25310cb4489 --image_id 20211122_205605_ssc14_u0001 --out_path ~/input/pre --temp_path ~/temp --pre_post pre --coordinates '{"start_lon":-84.51025876666456,"start_lat":39.135462800807794,"end_lon":-84.50162668204827,"end_lat":39.12701207640838}'
         return self._make_dag(cmd)
 
     def get_polygons(self):
