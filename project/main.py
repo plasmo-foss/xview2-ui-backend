@@ -162,90 +162,15 @@ def launch_assessment(body: LaunchAssessment):
     # Download the images for given job
     coords = fetch_coordinates(body.job_id)
     bounding_box = create_bounding_box_poly(coords)
-
-    # out_dir = Path(os.getenv("IMAGERY_OUTPUT_DIR")) / body.job_id
-
-    # # Todo: these should probably not be in the output directory...perhaps they should be in 'input'
-    # pre_path = (out_dir / "pre").resolve()
-    # post_path = (out_dir / "post").resolve()
-    # osm_out_path = (out_dir / "in_polys" / f"{body.job_id}_osm_poly.geojson").resolve()
-
-    # Todo: celery-ize this...well maybe later...don't think we can pass the converter object through serialization
-    # Expects a shapely polygon to allow geometries other than rectangles at some point
-
-    # fetch pre imagery
-    # pre_file_path = converter.download_imagery_helper(
-    #     body.job_id,
-    #     "pre",
-    #     body.pre_image_id,
-    #     bounding_box,
-    #     Path(os.getenv("IMAGERY_TEMP_DIR")),
-    #     pre_path,
-    # )
-
-    # # fetch post imagery
-    # post_file_path = converter.download_imagery_helper(
-    #     body.job_id,
-    #     "post",
-    #     body.post_image_id,
-    #     bounding_box,
-    #     Path(os.getenv("IMAGERY_TEMP_DIR")),
-    #     post_path,
-    # )
-
-    # Prepare our args for fetching OSM data
-    # Todo: this is already done above
-    # BUG: this seems backwards. Rename to north, south, east, west
     bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
 
-    # osm_out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Prepare our args for xv2 run
-    args = []
-    # args += ["--pre_directory", str(pre_file_path)]
-    # args += ["--post_directory", str(post_file_path)]
-    # args += [
-    #     "--output_directory",
-    #     str(out_dir),
-    # ]
-    # Todo: check that we got polygons before we write the file, and make sure we have the file before we pass it as an arg
-    # args += ["--bldg_polys", str(osm_out_path)]
-
-    # Todo(epound) to run on celery for Sky implementation
-    # Start EC2 with output mount to S3
-    # Setup environment, retrieve codebase, rsync weights
-    # Download imagery
-    # mount output bucket (and pre/post/poly if using AWS bucket)
-    # run inference -- output should be synced to bucket using mount
-    # delete input files on UI node (and aws bucket if using)
-
     # Run our celery tasks
-    infer = (
-        # instance_launch.s(
-        # get_imagery.si(
-        #     body.job_id,
-        #     "pre",
-        #     body.pre_image_id,
-        #     bbox,
-        #     os.getenv("IMAGERY_TEMP_DIR"),
-        #     str(pre_path),
-        # )
-        # | get_imagery.si(
-        #     body.job_id,
-        #     "post",
-        #     body.post_image_id,
-        #     bbox,
-        #     os.getenv("IMAGERY_TEMP_DIR"),
-        #     str(post_path),
-        # )
-        # | get_osm_polys.si(body.job_id, str(osm_out_path), bbox)
-        run_xv.si(
-            args, body.job_id, body.pre_image_id, body.post_image_id, get_osm=True, poly_dict=dict(coords)
-        )
-        # | store_results.si(
-        #     str(out_dir / body.job_id / "output" / "vector" / "damage.geojson"),
-        #     body.job_id,
-        # )
+    infer = run_xv.si(
+        body.job_id,
+        body.pre_image_id,
+        body.post_image_id,
+        get_osm=True,
+        poly_dict=dict(coords),
     )
     result = infer.apply_async()
 

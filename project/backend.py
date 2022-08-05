@@ -28,6 +28,7 @@ class Backend(ABC):
 class Local(Backend):
     # Todo: create an ansyc local inference backend
     # When complete, simply sky.launch this class on the instance and be done :)
+    # Would also allow running on DGX
     def get_imagery(self):
         pass
 
@@ -100,50 +101,6 @@ class SkyML(Backend):
     ):
         LOCAL_MNT = "/output"
         CLUSTER_NAME = f"xv2-inf-{job_id[-5:]}"
-
-        # SETUP_CMD = (
-        #     """\
-        #     # Exit if error occurs
-        #     set -ex
-
-        #     install() {
-        #         git clone https://github.com/RitwikGupta/xView2-Vulcan.git
-        #         conda create -n xv2 --file xView2-Vulcan/spec-file.txt
-        #     }
-
-        #     fetch_weights() {
-        #         wget https://xv2-weights.s3.amazonaws.com/first_place_weights.tar.gz
-        #         mkdir xView2-Vulcan/weights
-        #         tar -xzvf first_place_weights.tar.gz -C xView2-Vulcan/weights && rm first_place_weights.tar.gz
-        #     }
-
-        #     fetch_backbone_weights() {
-        #         mkdir -p ~/.cache/torch/hub/checkpoints
-        #         wget https://xv2-weights.s3.amazonaws.com/backbone_weights.tar.gz
-        #         tar -xzvf backbone_weights.tar.gz -C ~/.cache/torch/hub/checkpoints/ && rm backbone_weights.tar.gz
-        #     }
-
-        #     # Run the function in the background for parallel execution
-        #     install
-        #     fetch_weights
-        #     fetch_backbone_weights
-        #     wait
-        #     """
-        # )
-
-        # SETUP = textwrap.dedent(SETUP_CMD)
-
-        RUN_CMD = """\
-            wait
-            cd xView2-Vulcan
-            conda run -n xv2 python handler.py --pre_directory ~/input/pre --post_directory ~/input/post --output_directory ~/output_temp/jobid
-            cp -r ~/output_temp/* {local_mnt}
-            """
-
-        RUN = textwrap.dedent(RUN_CMD)
-
-        # SETUP = "echo setup"
-        # RUN = "echo run"
 
         try:
             with sky.Dag() as dag:

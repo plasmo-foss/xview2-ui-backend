@@ -342,37 +342,7 @@ class PlanetIM(Imagery):
         ]  # Todo: this is not the url to the resource...just to the endpoint to get the url(s)
 
         return timestamps, images, urls
-
-    # def get_url_list(self, image_id, geometry):
-
-    #     zoom = 18
-
-    #     base_url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image_id}/{zoom}/{{x}}/{{y}}.png?api_key={self.api_key}"
-
-    #     bounds = geometry.bounds
-
-    #     lon_min = bounds[0]
-    #     lat_min = bounds[1]
-    #     lon_max = bounds[2]
-    #     lat_max = bounds[3]
-
-    #     x_min, x_max, y_min, y_max = bbox_to_xyz(
-    #         lon_min, lon_max, lat_min, lat_max, zoom
-    #     )
-
-    #     url_list = []
-
-    #     for x in range(x_min, x_max + 1):
-    #         for y in range(y_min, y_max + 1):
-    #             url = (
-    #                 base_url.replace("{x}", str(x))
-    #                 .replace("{y}", str(y))
-    #                 .replace("{z}", str(zoom))
-    #             )
-
-    #             url_list.append(url)
-
-    #     return url_list
+        
 
     def download_imagery(
         self,
