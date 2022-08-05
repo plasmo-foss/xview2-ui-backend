@@ -85,6 +85,10 @@ class SkyML(Backend):
     def get_polygons(self):
         pass
 
+    def run_xv(self, pre_dir, post_dir, out_dir, local_mnt):
+        cmd = f"cd xView2-Vulcan && conda run -n xv2 python handler.py --pre_directory {pre_dir} --post_directory {post_dir} --output_directory {out_dir} && cp -r {out_dir}/* {local_mnt}"
+        return self._make_dag(cmd, gpu=True)
+
     def launch(
         self,
         s3_bucket: str,
@@ -159,32 +163,33 @@ class SkyML(Backend):
             sky.exec(self.get_code_base("https://github.com/RitwikGupta/xView2-Vulcan.git"), cluster_name=CLUSTER_NAME)
             # sky.exec(self.get_weights("https://xv2-weights.s3.amazonaws.com/first_place_weights.tar.gz", "~/fp_weights.tar.gz", "xView2-Vulcan/weights"), cluster_name=CLUSTER_NAME)
             # sky.exec(self.get_weights("https://xv2-weights.s3.amazonaws.com/backbone_weights.tar.gz", "~/backbone_weights.tar.gz", "~/.cache/torch/hub/checkpoints/"), cluster_name=CLUSTER_NAME)
+            
+            # get imagery
+            for i in ["pre", "post"]:
 
-            sky.exec(
-                self.get_imagery(
-                    img_provider,
-                    os.getenv("PLANET_API_KEY"),
-                    job_id,
-                    pre_image_id,
-                    "/temp",
-                    "/input/pre",
-                    poly_dict,
-                    "pre",
-                ),
-                cluster_name=CLUSTER_NAME,
-            )
+                if i == "pre":
+                    img_id = pre_image_id
+                else:
+                    img_id = post_image_id
+            
+                sky.exec(
+                    self.get_imagery(
+                        img_provider,
+                        os.getenv("PLANET_API_KEY"),
+                        job_id,
+                        img_id,
+                        "/temp",
+                        f"~/input/{i}",
+                        poly_dict,
+                        i,
+                    ),
+                    cluster_name=CLUSTER_NAME,
+                )
 
-            sky.exec(self.get_imagery(
-                    img_provider,
-                    os.getenv("PLANET_API_KEY"),
-                    job_id,
-                    post_image_id,
-                    "/temp",
-                    "/input/post",
-                    poly_dict,
-                    "post",
-                ),
-                cluster_name=CLUSTER_NAME)
+            #run xv2
+            # Todo: get OSM polys
+            sky.exec(self.run_xv("~/input/pre", "~/input/post", "~/output_temp", LOCAL_MNT))
+
 
         except:
             pass
