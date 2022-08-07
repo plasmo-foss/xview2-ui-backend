@@ -3,7 +3,7 @@ from shapely.geometry import MultiPolygon, Polygon
 from schemas import Coordinate
 
 from math import atan, cos, degrees, floor, log, pi, radians, sinh, tan
-from typing import List, Tuple
+
 
 def sec(x):
     return 1 / cos(x)

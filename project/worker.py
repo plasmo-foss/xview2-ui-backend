@@ -1,5 +1,4 @@
 import os
-import subprocess
 
 from celery import Celery
 from utils import create_bounding_box_poly

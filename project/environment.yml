@@ -7,4 +7,6 @@ dependencies:
   - gdal
   - geopandas
   - osmnx
+  - xmltodict
+  - pydantic
   - python=3.9
