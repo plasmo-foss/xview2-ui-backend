@@ -122,7 +122,7 @@ class SkyML(Backend):
         poly_dict: dict,
         pre_post: str,
     ):
-        cmd = f"conda env create --file=environment.yml && conda conda run -n xv2_backend python imagery.py --provider {img_provider} --api_key {api_key} --job_id {job_id} --image_id {image_id} --out_path {out_path} --temp_path {temp_path} --pre_post {pre_post} --coordinates {json.dumps(poly_dict).replace(' ', '')}"
+        cmd = f"conda run -n xv2_backend python imagery.py --provider {img_provider} --api_key {api_key} --job_id {job_id} --image_id {image_id} --out_path {out_path} --temp_path {temp_path} --pre_post {pre_post} --coordinates '{json.dumps(poly_dict)}'"
         # command that works!
         # conda run -n xv2 python imagery.py --provider Planet --api_key PLAKcc6a392a192d41de8ed39504826419ec --job_id 70c560e1-c10e-42e9-b99f-c25310cb4489 --image_id 20211122_205605_ssc14_u0001 --out_path ~/input/pre --temp_path ~/temp --pre_post pre --coordinates '{"start_lon":-84.51025876666456,"start_lat":39.135462800807794,"end_lon":-84.50162668204827,"end_lat":39.12701207640838}'
         return self._make_dag(cmd)
@@ -165,13 +165,19 @@ class SkyML(Backend):
                 self.get_code_base("https://github.com/RitwikGupta/xView2-Vulcan.git"),
                 cluster_name=CLUSTER_NAME,
             )
-            # sky.exec(self.get_weights("https://xv2-weights.s3.amazonaws.com/first_place_weights.tar.gz", "~/fp_weights.tar.gz", "xView2-Vulcan/weights"), cluster_name=CLUSTER_NAME)
-            # sky.exec(self.get_weights("https://xv2-weights.s3.amazonaws.com/backbone_weights.tar.gz", "~/backbone_weights.tar.gz", "~/.cache/torch/hub/checkpoints/"), cluster_name=CLUSTER_NAME)
+            sky.exec(self.get_weights("https://xv2-weights.s3.amazonaws.com/first_place_weights.tar.gz", "~/fp_weights.tar.gz", "xView2-Vulcan/weights"), cluster_name=CLUSTER_NAME)
+            sky.exec(self.get_weights("https://xv2-weights.s3.amazonaws.com/backbone_weights.tar.gz", "~/backbone_weights.tar.gz", "~/.cache/torch/hub/checkpoints/"), cluster_name=CLUSTER_NAME)
 
             # get imagery
-            for i in ["pre", "post"]:
 
-                if i == "pre":
+            sky.exec(
+                self._make_dag("conda env create --file=environment.yml"),
+                cluster_name=CLUSTER_NAME,
+            )
+
+            for pre_post in ["pre", "post"]:
+
+                if pre_post == "pre":
                     img_id = pre_image_id
                 else:
                     img_id = post_image_id
@@ -182,10 +188,10 @@ class SkyML(Backend):
                         os.getenv("PLANET_API_KEY"),
                         job_id,
                         img_id,
-                        "/temp",
-                        f"~/input/{i}",
+                        "~/temp",
+                        f"~/input/{pre_post}",
                         poly_dict,
-                        i,
+                        pre_post,
                     ),
                     cluster_name=CLUSTER_NAME,
                 )
@@ -193,7 +199,8 @@ class SkyML(Backend):
             # run xv2
             # Todo: get OSM polys
             sky.exec(
-                self.run_xv("~/input/pre", "~/input/post", "~/output_temp", LOCAL_MNT)
+                self.run_xv("~/input/pre", "~/input/post", "~/output_temp", LOCAL_MNT),
+                cluster_name=CLUSTER_NAME,
             )
 
         except:
