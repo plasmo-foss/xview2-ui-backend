@@ -130,9 +130,8 @@ class SkyML(Backend):
     def get_polygons(self):
         pass
 
-    def run_xv(self, job_id, pre_dir, post_dir, out_dir, local_mnt):
-        s3_out = f"{local_mnt}/{job_id}"
-        cmd = f"cd xView2-Vulcan && conda run -n xv2 python handler.py --pre_directory {pre_dir} --post_directory {post_dir} --output_directory {out_dir} && mkdir -p {s3_out} && cp -r {out_dir}/* {s3_out}"
+    def run_xv(self, pre_dir, post_dir, out_dir, local_mnt):
+        cmd = f"cd xView2-Vulcan && conda run -n xv2 python handler.py --pre_directory {pre_dir} --post_directory {post_dir} --output_directory {out_dir} && cp -r {out_dir}/* {local_mnt}"
         return self._make_dag(cmd, gpu=True)
 
     def launch(
@@ -200,7 +199,7 @@ class SkyML(Backend):
             # run xv2
             # Todo: get OSM polys
             sky.exec(
-                self.run_xv(job_id, "~/input/pre", "~/input/post", "~/output_temp", LOCAL_MNT),
+                self.run_xv("~/input/pre", "~/input/post", "~/output_temp", LOCAL_MNT),
                 cluster_name=CLUSTER_NAME,
             )
 
