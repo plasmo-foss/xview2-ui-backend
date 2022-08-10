@@ -199,7 +199,6 @@ class Imagery(ABC):
         pass
 
 
-# Todo: Not working pending reply from MAXAR support on fetching images
 class MAXARIM(Imagery):
     def __init__(self, api_key: str) -> None:
         super().__init__(api_key)
