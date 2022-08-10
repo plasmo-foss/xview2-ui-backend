@@ -2,6 +2,9 @@ import sky
 from abc import ABC, abstractmethod
 import os
 import json
+from imagery import Imagery
+from schemas import Coordinate
+from pathlib import Path
 
 
 class Backend(ABC):
@@ -124,7 +127,7 @@ class SkyML(Backend):
     ):
         cmd = f"conda run -n xv2_backend python imagery.py --provider {img_provider} --api_key {api_key} --job_id {job_id} --image_id {image_id} --out_path {out_path} --temp_path {temp_path} --pre_post {pre_post} --coordinates '{json.dumps(poly_dict)}'"
         # command that works!
-        # conda run -n xv2 python imagery.py --provider Planet --api_key PLAKcc6a392a192d41de8ed39504826419ec --job_id 70c560e1-c10e-42e9-b99f-c25310cb4489 --image_id 20211122_205605_ssc14_u0001 --out_path ~/input/pre --temp_path ~/temp --pre_post pre --coordinates '{"start_lon":-84.51025876666456,"start_lat":39.135462800807794,"end_lon":-84.50162668204827,"end_lat":39.12701207640838}'
+        # conda run -n xv2 python imagery.py --provider Planet --api_key PLAKcc6a392a192d41de8ed39504826419ec --job_id 70c560e1-c10e-42e9-b99f-c25310cb4489 --image_id 20211122_205605_ssc14_u0001 --out_path ~/input/pre --temp_path ~/temp --pre_post pre --coordinates '{"start_lon": -84.51025876666456, "start_lat": 39.135462800807794, "end_lon": -84.50162668204827, "end_lat": 39.12701207640838}'
         return self._make_dag(cmd)
 
     def get_polygons(self):
@@ -160,41 +163,60 @@ class SkyML(Backend):
                 retry_until_up=True,
                 idle_minutes_to_autostop=60,  # Todo: Change autostop time (used currently for debugging)
             )
+            # working imagery command: 
+            #python backend.py --task imagery --api_key PLAKcc6a392a192d41de8ed39504826419ec --provider Planet --job_id 70c560e1-c10e-42e9-b99f-c25310cb4489 --image_id 20211122_205605_ssc14_u0001 --coordinates '{"start_lon": -84.51025876666456, "start_lat": 39.135462800807794, "end_lon": -84.50162668204827, "end_lat": 39.12701207640838}' --out_path ~/Downloads/output --temp_path ~/Downloads/temp --pre_post pre
+            # get pre imagery
+            sky.exec(self._make_dag(f"docker run --task imagery --provider {img_provider} --api_key PLAKcc6a392a192d41de8ed39504826419ec --job_id {job_id} --image_id {pre_image_id} --coordinates '{json.dumps(poly_dict)}' --out_path ~/Downloads/output --temp_path ~/Downloads/temp --pre_post pre"))
+            # get post imagery
 
-            sky.exec(
-                self.get_code_base("https://github.com/RitwikGupta/xView2-Vulcan.git"),
-                cluster_name=CLUSTER_NAME,
-            )
-            sky.exec(self.get_weights("https://xv2-weights.s3.amazonaws.com/first_place_weights.tar.gz", "~/fp_weights.tar.gz", "xView2-Vulcan/weights"), cluster_name=CLUSTER_NAME)
-            sky.exec(self.get_weights("https://xv2-weights.s3.amazonaws.com/backbone_weights.tar.gz", "~/backbone_weights.tar.gz", "~/.cache/torch/hub/checkpoints/"), cluster_name=CLUSTER_NAME)
+            # sky.exec(
+            #     self.get_code_base("https://github.com/RitwikGupta/xView2-Vulcan.git"),
+            #     cluster_name=CLUSTER_NAME,
+            # )
+            # sky.exec(
+            #     self.get_weights(
+            #         "https://xv2-weights.s3.amazonaws.com/first_place_weights.tar.gz",
+            #         "~/fp_weights.tar.gz",
+            #         "xView2-Vulcan/weights",
+            #     ),
+            #     cluster_name=CLUSTER_NAME,
+            # )
+            # sky.exec(
+            #     self.get_weights(
+            #         "https://xv2-weights.s3.amazonaws.com/backbone_weights.tar.gz",
+            #         "~/backbone_weights.tar.gz",
+            #         "~/.cache/torch/hub/checkpoints/",
+            #     ),
+            #     cluster_name=CLUSTER_NAME,
+            # )
 
-            # get imagery
+            # # get imagery
 
-            sky.exec(
-                self._make_dag("conda env create --file=environment.yml"),
-                cluster_name=CLUSTER_NAME,
-            )
+            # sky.exec(
+            #     self._make_dag("conda env create --file=environment.yml"),
+            #     cluster_name=CLUSTER_NAME,
+            # )
 
-            for pre_post in ["pre", "post"]:
+            # for pre_post in ["pre", "post"]:
 
-                if pre_post == "pre":
-                    img_id = pre_image_id
-                else:
-                    img_id = post_image_id
+            #     if pre_post == "pre":
+            #         img_id = pre_image_id
+            #     else:
+            #         img_id = post_image_id
 
-                sky.exec(
-                    self.get_imagery(
-                        img_provider,
-                        os.getenv("PLANET_API_KEY"),
-                        job_id,
-                        img_id,
-                        "~/temp",
-                        f"~/input/{pre_post}",
-                        poly_dict,
-                        pre_post,
-                    ),
-                    cluster_name=CLUSTER_NAME,
-                )
+            #     sky.exec(
+            #         self.get_imagery(
+            #             img_provider,
+            #             os.getenv("PLANET_API_KEY"),
+            #             job_id,
+            #             img_id,
+            #             "~/temp",
+            #             f"~/input/{pre_post}",
+            #             poly_dict,
+            #             pre_post,
+            #         ),
+            #         cluster_name=CLUSTER_NAME,
+            #     )
 
             # run xv2
             # Todo: get OSM polys
@@ -215,3 +237,71 @@ class SkyML(Backend):
 
 # job polling
 # In the CLI world, you can poll for the prior jobs (each exec = 1 job) statuses and wait until they are done (sky logs CLUSTER JOB_ID --status). We don’t have a nice API to directly call for this at the moment.
+# Utilized to run imagery download on remote instances
+
+def init():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Create arguments for imagery handling."
+    )
+
+    parser.add_argument("--task", required=True, help="Task to perform.")
+
+    im_args = parser.add_argument_group("Imagery", "Arguments for imagery download task")
+    im_args.add_argument(
+        "--provider", required=True, help="Imagery provider",
+    )
+    im_args.add_argument("--api_key", required=True, help="API key for imagery provider")
+    im_args.add_argument(
+        "--coordinates",
+        required=True,
+        type=json.loads,
+        help="Dictionary from Coordinate object",
+    )
+    im_args.add_argument("--job_id", required=True, help="Job ID")
+    im_args.add_argument("--image_id", required=True, help="ID of image to retrieve")
+    im_args.add_argument("--out_path", required=True, help="Path to save image(s)")
+    im_args.add_argument(
+        "--temp_path", required=True, help="Path for storage of temporary files"
+    )
+    im_args.add_argument(
+        "--pre_post",
+        required=True,
+        help="String indicating whether this is 'pre' or 'post' imagery",
+    )
+
+    finish_args = parser.add_argument_group("Finish", "Arguments for finishing up inference run")
+
+
+    args = parser.parse_args()
+
+    return args
+
+
+def backend_helper(args):
+    from utils import create_bounding_box_poly
+
+    coords = Coordinate(
+        start_lon=args.coordinates["start_lon"],
+        start_lat=args.coordinates["start_lat"],
+        end_lon=args.coordinates["end_lon"],
+        end_lat=args.coordinates["end_lat"],
+    )
+    poly = create_bounding_box_poly(coords)
+
+    temp_path = Path(args.temp_path)
+    out_path = Path(args.out_path)
+
+    provider = Imagery.get_provider(args.provider, args.api_key)
+    print(
+        provider.download_imagery_helper(
+            args.job_id, args.pre_post, args.image_id, poly, temp_path, out_path
+        ).resolve()
+    )
+
+
+if __name__ == "__main__":
+    args = init()
+    if args.task.lower() == "imagery":
+        backend_helper(args)
