@@ -1,3 +1,7 @@
+# Temp and data folders
+project/data/
+project/temp/
+
 # helpers
 scratch_*
 *cache*
