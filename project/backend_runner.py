@@ -3,18 +3,17 @@ from schemas.coordinate import Coordinate
 import json
 from imagery import Imagery
 from pathlib import Path
+from worker import get_osm_polys
 
 
 def init():
     parser = argparse.ArgumentParser(
         description="Create arguments for imagery handling."
     )
+    subparsers = parser.add_subparsers()
 
-    parser.add_argument("--task", required=True, help="Task to perform.")
-
-    im_args = parser.add_argument_group(
-        "Imagery", "Arguments for imagery download task"
-    )
+    # args for downloading imagery
+    im_args = subparsers.add_parser("imagery", help="Download imagery")
     im_args.add_argument(
         "--provider", required=True, help="Imagery provider",
     )
@@ -38,17 +37,27 @@ def init():
         required=True,
         help="String indicating whether this is 'pre' or 'post' imagery",
     )
+    im_args.set_defaults(func=fetch_imagery)
 
-    finish_args = parser.add_argument_group(
-        "Finish", "Arguments for finishing up inference run"
+    # args for fetching OSM polys
+    osm_args = subparsers.add_parser("fetch_osm", help="Fetch OSM building footprints")
+    osm_args.add_argument("--job_id", required=True, help="Job ID")
+    osm_args.add_argument(
+        "--coordinates",
+        required=True,
+        type=json.loads,
+        help="Dictionary from Coordinate object",
     )
+    osm_args.set_defaults(func=fetch_osm)
+
+    # Todo;
+    # args for wrapping up inference (push json to DB)
 
     args = parser.parse_args()
+    return args.func(args)
 
-    return args
 
-
-def backend_helper(args):
+def fetch_imagery(args):
     from utils import create_bounding_box_poly
 
     coords = Coordinate(
@@ -69,8 +78,24 @@ def backend_helper(args):
         ).resolve()
     )
 
+    return
+
+
+def fetch_osm(args):
+    # Todo: test me!
+    get_osm_polys(
+        args.job_id,
+        "~/input/polys",
+        (
+            args.coordinates.get("start_lat"),
+            args.coordinates.get("end_lat"),
+            args.coordinates.get("end_lon"),
+            args.coordinates.get("start_lon")
+        ),
+    )
+
+    return
+
 
 if __name__ == "__main__":
-    args = init()
-    if args.task.lower() == "imagery":
-        backend_helper(args)
+    init()
