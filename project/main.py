@@ -124,15 +124,17 @@ def fetch_osm_polygons(job_id: str) -> Dict:
             osm_geojson (dict): The FeatureCollection representing all building polygons for the bounding box
     """
     engine = rdspostgis_sa_client()
-    sql = "SELECT geometry FROM xviewui_osm_polys"
+    sql = f"SELECT geometry FROM xviewui_osm_polys WHERE uid='{job_id}'"
     gdf = gpd.GeoDataFrame.from_postgis(sql, engine, geom_col='geometry')
 
-    if gdf is None:
+    geojson = json.loads(gdf.to_json())
+
+    if len(geojson['features']) == 0:
         return None
     else:
         return {
             'uid': job_id,
-            'geojson': json.loads(gdf.to_json())
+            'geojson': geojson
         }
 
 
