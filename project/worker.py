@@ -75,6 +75,7 @@ def run_xv(args: list) -> None:
 @celery.task()
 def store_results(in_file: str, job_id: str):
     gdf = gpd.read_file(in_file)
+    gdf['uid'] = job_id
     gdf = gdf.to_crs(4326)
 
     # Push results to Postgres
