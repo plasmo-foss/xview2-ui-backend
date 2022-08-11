@@ -7,18 +7,14 @@ from decimal import Decimal
 import geopandas as gpd
 import osmnx as ox
 from celery import Celery
+from shapely.geometry.multipolygon import MultiPolygon
+from shapely.geometry.polygon import Polygon
 
 from schemas.osmgeojson import OsmGeoJson
 from schemas.routes import SearchOsmPolygons
-from utils import (
-    awsddb_client,
-    insert_pdb_status,
-    update_pdb_status,
-    order_coordinate,
-    osm_geom_to_poly_geojson,
-    rdspostgis_client,
-    rdspostgis_sa_client,
-)
+from utils import (awsddb_client, insert_pdb_status, order_coordinate,
+                   osm_geom_to_poly_geojson, rdspostgis_client,
+                   rdspostgis_sa_client, update_pdb_status)
 
 celery = Celery(__name__)
 celery.conf.broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379")
@@ -41,6 +37,8 @@ def get_osm_polys(
     gdf = gdf.reset_index()
     gdf = gdf.loc[gdf.element_type != "node", cols]
     gdf["uid"] = job_id
+
+    gdf["geometry"] = [MultiPolygon([feature]) if isinstance(feature, Polygon) else feature for feature in gdf["geometry"]]
 
     gdf.to_file(out_file)
 
@@ -78,6 +76,8 @@ def store_results(in_file: str, job_id: str):
     gdf = gpd.read_file(in_file)
     gdf['uid'] = job_id
     gdf = gdf.to_crs(4326)
+
+    gdf["geometry"] = [MultiPolygon([feature]) if isinstance(feature, Polygon) else feature for feature in gdf["geometry"]]
 
     # Push results to Postgres
     engine = rdspostgis_sa_client()
