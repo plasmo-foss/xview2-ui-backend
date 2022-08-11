@@ -13,6 +13,7 @@ from schemas.routes import SearchOsmPolygons
 from utils import (
     awsddb_client,
     insert_pdb_status,
+    update_pdb_status,
     order_coordinate,
     osm_geom_to_poly_geojson,
     rdspostgis_client,
@@ -83,6 +84,6 @@ def store_results(in_file: str, job_id: str):
     gdf.to_postgis("xviewui_results", engine, if_exists="append")
 
     # Update job status
-    insert_pdb_status(conn, job_id, "done")
+    update_pdb_status(conn, job_id, "done")
 
     return
