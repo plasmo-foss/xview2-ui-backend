@@ -295,7 +295,7 @@ def create_postgres_tables(conn):
             cur.execute(
                 """CREATE TABLE xviewui_osm_polys (
                     uid uuid NOT NULL,
-                    osmid TEXT UNIQUE,
+                    osmid TEXT,
                     geometry geometry(POLYGON,4326) NOT NULL
                 );"""
             )
@@ -317,7 +317,7 @@ def create_postgres_tables(conn):
             cur.execute(
                 """CREATE TABLE xviewui_results (
                     uid uuid UNIQUE NOT NULL,
-                    osmid TEXT UNIQUE,
+                    osmid TEXT,
                     dmg float4 NOT NULL,
                     area float8 NOT NULL,
                     geometry geometry(POLYGON,4326) NOT NULL
