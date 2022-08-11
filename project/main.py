@@ -18,7 +18,7 @@ from utils import (Converter, awsddb_client, create_bounding_box_poly,
                    create_postgres_tables, download_planet_imagery,
                    get_planet_imagery, order_coordinate, rdspostgis_client,
                    insert_pdb_coordinates, insert_pdb_status, get_pdb_coordinate,
-                   get_pdb_status, rdspostgis_sa_client)
+                   get_pdb_status, rdspostgis_sa_client, insert_pdb_planet_result, update_pdb_status)
 from worker import get_osm_polys, run_xv, store_results
 
 
@@ -160,16 +160,8 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
             }
         )
 
-    item = json.loads(json.dumps(ret), parse_float=Decimal)
-    # Persist the response to DynamoDB
-    ddb.Table("xview2-ui-planet-api").put_item(
-        Item={"uid": str(body.job_id), "planet_response": item}
-    )
-
-    # Update job status
-    ddb.Table("xview2-ui-status").put_item(
-        Item={"uid": str(body.job_id), "status": "waiting_assessment"}
-    )
+    insert_pdb_planet_result(conn, body.job_id, json.dumps(ret))
+    update_pdb_status(conn, body.job_id, 'waiting_assessment')
 
     return Planet(uid=body.job_id, images=ret)
 
