@@ -12,13 +12,32 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from schemas import (Coordinate, FetchPlanetImagery, LaunchAssessment,
-                     OsmGeoJson, Planet, SearchOsmPolygons)
-from utils import (Converter, awsddb_client, create_bounding_box_poly,
-                   create_postgres_tables, download_planet_imagery,
-                   get_planet_imagery, order_coordinate, rdspostgis_client,
-                   insert_pdb_coordinates, insert_pdb_status, get_pdb_coordinate,
-                   get_pdb_status, rdspostgis_sa_client, insert_pdb_planet_result, update_pdb_status)
+from schemas import (
+    Coordinate,
+    FetchPlanetImagery,
+    LaunchAssessment,
+    OsmGeoJson,
+    Planet,
+    SearchOsmPolygons,
+)
+from utils import (
+    Converter,
+    awsddb_client,
+    create_bounding_box_poly,
+    create_postgres_tables,
+    download_planet_imagery,
+    get_pdb_coordinate,
+    get_pdb_status,
+    get_planet_imagery,
+    insert_pdb_coordinates,
+    insert_pdb_planet_result,
+    insert_pdb_selected_imagery,
+    insert_pdb_status,
+    order_coordinate,
+    rdspostgis_client,
+    rdspostgis_sa_client,
+    update_pdb_status,
+)
 from worker import get_osm_polys, run_xv, store_results
 
 
@@ -106,10 +125,7 @@ def job_status(job_id: str) -> Dict:
     if resp is None:
         return None
     else:
-        return {
-            'uid': job_id,
-            'status': resp
-        }
+        return {"uid": job_id, "status": resp}
 
 
 @app.get("/fetch-osm-polygons", response_model=OsmGeoJson)
@@ -125,17 +141,14 @@ def fetch_osm_polygons(job_id: str) -> Dict:
     """
     engine = rdspostgis_sa_client()
     sql = f"SELECT geometry FROM xviewui_osm_polys WHERE uid='{job_id}'"
-    gdf = gpd.GeoDataFrame.from_postgis(sql, engine, geom_col='geometry')
+    gdf = gpd.GeoDataFrame.from_postgis(sql, engine, geom_col="geometry")
 
     geojson = json.loads(gdf.to_json())
 
-    if len(geojson['features']) == 0:
+    if len(geojson["features"]) == 0:
         return None
     else:
-        return {
-            'uid': job_id,
-            'geojson': geojson
-        }
+        return {"uid": job_id, "geojson": geojson}
 
 
 @app.post("/fetch-planet-imagery", response_model=Planet)
@@ -148,7 +161,9 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
 
     if body.current_date is None:
         body.current_date = datetime.now().isoformat()
-    imagery_list = get_planet_imagery(os.getenv("PLANET_API_KEY"), bounding_box, body.current_date)
+    imagery_list = get_planet_imagery(
+        os.getenv("PLANET_API_KEY"), bounding_box, body.current_date
+    )
 
     ret = []
     for image in imagery_list:
@@ -156,12 +171,15 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
             {
                 "timestamp": image["timestamp"],
                 "item_type": "SkySatCollect",
-                "item_id": image["image_id"]
+                "item_id": image["image_id"],
             }
         )
 
+    # Insert Planet API results to Postgres as blob
     insert_pdb_planet_result(conn, body.job_id, json.dumps(ret))
-    update_pdb_status(conn, body.job_id, 'waiting_assessment')
+
+    # Update status of job
+    update_pdb_status(conn, body.job_id, "waiting_assessment")
 
     return Planet(uid=body.job_id, images=ret)
 
@@ -169,13 +187,9 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
 @app.post("/launch-assessment")
 def launch_assessment(body: LaunchAssessment):
 
-    # Persist the response to DynamoDB
-    ddb.Table("xview2-ui-selected-imagery").put_item(
-        Item={
-            "uid": body.job_id,
-            "pre_image_id": body.pre_image_id,
-            "post_image_id": body.post_image_id,
-        }
+    # Insert selected imagery IDs to Postgres
+    insert_pdb_selected_imagery(
+        conn, body.job_id, body.pre_image_id, body.post_image_id
     )
 
     # Download the images for given job
@@ -254,7 +268,6 @@ def fetch_assessment(job_id: str):
     def dumps(item: dict) -> str:
         return json.dumps(item, default=default_type_error_handler)
 
-
     def default_type_error_handler(obj):
         if isinstance(obj, Decimal):
             return float(obj)
@@ -270,7 +283,6 @@ def fetch_assessment(job_id: str):
         return json.loads(gdf.to_crs(4326).to_json())
     else:
         return None
-
 
 
 # No longer works but this is how we should call our chain/chord

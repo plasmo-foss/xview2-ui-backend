@@ -426,3 +426,17 @@ def insert_pdb_planet_result(conn, uid, planet_response):
             );
             """
         )
+
+
+def insert_pdb_selected_imagery(conn, uid, pre_image_id, post_image_id):
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""INSERT INTO xviewui_selected_imagery (uid, pre_image_id, post_image_id)
+            VALUES
+            (
+                '{uid}',
+                '{pre_image_id}',
+                '{post_image_id}'
+            );
+            """
+        )
