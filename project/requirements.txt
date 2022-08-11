@@ -5,7 +5,7 @@ flower==0.9.7
 Jinja2==3.0.3
 pytest==6.2.4
 redis==3.5.3
-requests==2.25.1
+requests
 uvicorn==0.13.4
 boto3
 python-dotenv
