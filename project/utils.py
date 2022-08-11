@@ -414,3 +414,15 @@ def get_pdb_status(conn, uid):
         return None
     else:
         return record[1]
+
+def insert_pdb_planet_result(conn, uid, planet_response):
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""INSERT INTO xviewui_planet_api (uid, planet_response)
+            VALUES
+            (
+                '{uid}',
+                '{planet_response}'
+            );
+            """
+        )
