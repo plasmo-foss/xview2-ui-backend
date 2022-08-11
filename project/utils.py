@@ -255,6 +255,18 @@ def rdspostgis_client():
     return conn
 
 
+def rdspostgis_sa_client():
+    host = os.getenv("PSDB_HOST")
+    port = os.getenv("PSDB_PORT")
+    user = os.getenv("PSDB_USER")
+    password = os.getenv("PSDB_PASSWORD")
+    dbname = os.getenv("PSDB_DBNAME")
+    engine = sqlalchemy.create_engine(
+        f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    )
+    return engine
+
+
 def check_postgres_table_exists(conn, table_name):
     cur = conn.cursor()
     cur.execute(
@@ -282,9 +294,9 @@ def create_postgres_tables(conn):
         with conn.cursor() as cur:
             cur.execute(
                 """CREATE TABLE xviewui_osm_polys (
-                    uid uuid UNIQUE NOT NULL,
+                    uid uuid NOT NULL,
                     osmid TEXT UNIQUE,
-                    geometry geometry NOT NULL
+                    geometry geometry(POLYGON,4326) NOT NULL
                 );"""
             )
 
