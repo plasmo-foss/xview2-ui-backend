@@ -9,6 +9,8 @@ import dateutil.parser
 import geopandas as gpd
 import planet.api as api
 import requests
+import sqlalchemy
+from sqlalchemy.sql import text
 from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 from osgeo import gdal
@@ -17,7 +19,8 @@ from shapely.geometry import MultiPolygon, Polygon, mapping
 
 from schemas import Coordinate
 from tileserverutils import bbox_to_xyz, x_to_lon_edges, y_to_lat_edges
-
+import psycopg2
+from schemas import Coordinate
 
 class Converter:
     def __init__(self, temp_dir, output_dir, bounding_box, zoom, job_id):
@@ -106,7 +109,10 @@ class Converter:
         print("Merging tiles")
         self.merge_tiles(
             (self.temp_dir / "*.tif").as_posix(),
-            self.output_dir / self.job_id / prepost / f"{self.job_id}_{prepost}_merged.tif"
+            self.output_dir
+            / self.job_id
+            / prepost
+            / f"{self.job_id}_{prepost}_merged.tif",
         )
         print("Merge complete")
 
@@ -172,7 +178,7 @@ def osm_geom_to_poly_geojson(osm_data: dict):
 def create_bounding_box_poly(coordinate: Coordinate) -> Polygon:
     """
     Creates a rectangular bounding box Polygon given an input Coordinate
-    
+
         Parameters:
             coordinate (Coordinate): the input bounding box from the user UI
 
@@ -204,17 +210,17 @@ def get_planet_imagery(api_key: str, geom: Polygon, current_date: str) -> dict:
 
     request = api.filters.build_search_request(query, ["SkySatCollect"])
     search_result = requests.post(
-        'https://api.planet.com/data/v1/quick-search',
-        auth=HTTPBasicAuth(api_key, ''),
-        json=request)
+        "https://api.planet.com/data/v1/quick-search",
+        auth=HTTPBasicAuth(api_key, ""),
+        json=request,
+    )
 
     search_result_json = json.loads(search_result.text)
     items = search_result_json["features"]
 
     # items_iter returns an iterator over API response pages
     return [
-        {"image_id": i["id"], "timestamp": i["properties"]["published"]}
-        for i in items
+        {"image_id": i["id"], "timestamp": i["properties"]["published"]} for i in items
     ]
 
 
@@ -235,3 +241,151 @@ def awsddb_client():
         endpoint_url=os.getenv("DB_ENDPOINT_URL"),
     )
 
+
+def rdspostgis_client():
+    host = os.getenv("PSDB_HOST")
+    port = os.getenv("PSDB_PORT")
+    user = os.getenv("PSDB_USER")
+    password = os.getenv("PSDB_PASSWORD")
+    dbname = os.getenv("PSDB_DBNAME")
+    conn = psycopg2.connect(
+        f"host={host} port={port} user={user} password={password} dbname={dbname}"
+    )
+    conn.autocommit = True
+    return conn
+
+
+def check_postgres_table_exists(conn, table_name):
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT EXISTS(SELECT * FROM information_schema.tables WHERE table_name='{table_name}')"
+    )
+    return cur.fetchone()[0]
+
+
+def create_postgres_tables(conn):
+    if not check_postgres_table_exists(conn, "xviewui_coordinates"):
+        print("Creating xviewui_coordinates table")
+        with conn.cursor() as cur:
+            cur.execute(
+                """CREATE TABLE xviewui_coordinates (
+                uid uuid UNIQUE NOT NULL,
+                end_lat float8 NOT NULL,
+                end_lon float8 NOT NULL,
+                start_lat float8 NOT NULL,
+                start_lon float8 NOT NULL
+            );"""
+            )
+
+    if not check_postgres_table_exists(conn, "xviewui_osm_polys"):
+        print("Creating xviewui_osm_polys table")
+        with conn.cursor() as cur:
+            cur.execute(
+                """CREATE TABLE xviewui_osm_polys (
+                    uid uuid UNIQUE NOT NULL,
+                    osmid TEXT UNIQUE,
+                    geometry geometry NOT NULL
+                );"""
+            )
+
+    if not check_postgres_table_exists(conn, "xviewui_planet_api"):
+        print("Creating xviewui_planet_api table")
+        with conn.cursor() as cur:
+            cur.execute(
+                """CREATE TABLE xviewui_planet_api (
+                    uid uuid UNIQUE NOT NULL,
+                    planet_response json NOT NULL
+                )
+                """
+            )
+
+    if not check_postgres_table_exists(conn, "xviewui_results"):
+        print("Creating xviewui_results table")
+        with conn.cursor() as cur:
+            cur.execute(
+                """CREATE TABLE xviewui_results (
+                    uid uuid UNIQUE NOT NULL,
+                    osmid TEXT UNIQUE,
+                    dmg float4 NOT NULL,
+                    area float8 NOT NULL,
+                    geometry geometry NOT NULL
+                )"""
+            )
+
+    if not check_postgres_table_exists(conn, "xviewui_selected_imagery"):
+        print("Creating xviewui_selected_imagery table")
+        with conn.cursor() as cur:
+            cur.execute(
+                """CREATE TABLE xviewui_selected_imagery (
+                    uid uuid UNIQUE NOT NULL,
+                    pre_image_id text NOT NULL,
+                    post_image_id text NOT NULL
+                )"""
+            )
+
+    if not check_postgres_table_exists(conn, "xviewui_status"):
+        print("Creating xviewui_status table")
+        with conn.cursor() as cur:
+            cur.execute(
+                """CREATE TABLE xviewui_status (
+                    uid uuid UNIQUE NOT NULL,
+                    status text NOT NULL
+                )"""
+            )
+
+
+def insert_pdb_coordinates(conn, uid, item):
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""INSERT INTO xviewui_coordinates (uid, end_lat, end_lon, start_lat, start_lon)
+            VALUES
+            (
+                '{uid}',
+                {item['end_lat']},
+                {item['end_lon']},
+                {item['start_lat']},
+                {item['start_lon']}
+            );"""
+        )
+
+
+def insert_pdb_status(conn, uid, status):
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""INSERT INTO xviewui_status (uid, status)
+            VALUES
+            (
+                '{uid}',
+                '{status}'
+            );
+            """
+        )
+
+
+def update_pdb_status(conn, uid, status):
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""UPDATE xviewui_status
+            SET status = '{status}'
+            WHERE uid = '{uid}';
+            """
+        )
+
+def get_pdb_coordinate(conn, uid):
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT * FROM xviewui_coordinates
+            WHERE uid = '{uid}';
+        """)
+        record = cur.fetchone()
+    
+    if record is None:
+        return None
+    
+    _, end_lat, end_lon, start_lat, start_lon = record
+    return Coordinate(
+        end_lat=end_lat,
+        end_lon=end_lon,
+        start_lat=start_lat,
+        start_lon=start_lon
+    )

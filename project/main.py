@@ -6,28 +6,18 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List
 
-from celery import group, chain, chord
+import geopandas as gpd
+from celery import chain, chord, group
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-import geopandas as gpd
 
-from schemas import (
-    Coordinate,
-    FetchPlanetImagery,
-    LaunchAssessment,
-    OsmGeoJson,
-    Planet,
-    SearchOsmPolygons,
-)
-from utils import (
-    Converter,
-    create_bounding_box_poly,
-    download_planet_imagery,
-    get_planet_imagery,
-    order_coordinate,
-    awsddb_client,
-)
+from schemas import (Coordinate, FetchPlanetImagery, LaunchAssessment,
+                     OsmGeoJson, Planet, SearchOsmPolygons)
+from utils import (Converter, awsddb_client, create_bounding_box_poly,
+                   create_postgres_tables, download_planet_imagery,
+                   get_planet_imagery, order_coordinate, rdspostgis_client,
+                   insert_pdb_coordinates, insert_pdb_status, get_pdb_coordinate)
 from worker import get_osm_polys, run_xv, store_results
 
 
@@ -50,6 +40,7 @@ app = FastAPI(
 
 client = None
 ddb = None
+cursor = None
 
 conf = load_dotenv(override=True)
 
@@ -59,8 +50,17 @@ access_keys = {}
 @app.on_event("startup")
 async def startup_event():
     global ddb
+    global conn
     global access_keys
+
+    # Set up DynamoDB
     ddb = awsddb_client()
+
+    # Create connection to AWS RDS Postgres
+    conn = rdspostgis_client()
+    create_postgres_tables(conn)
+
+    # Load valid access keys into memory
     access_keys = set(
         [key.strip() for key in open(".env.access_keys", "r").readlines()]
     )
@@ -84,24 +84,17 @@ def send_coordinates(coordinate: Coordinate) -> str:
         Item={"uid": str(uid), "status": "waiting_imagery"}
     )
 
+    insert_pdb_coordinates(conn, uid, item)
+    insert_pdb_status(conn, uid, "waiting_imagery")
+
     return uid
 
 
 @app.get("/fetch-coordinates", response_model=Coordinate)
 def fetch_coordinates(job_id: str) -> Coordinate:
 
-    resp = ddb.Table("xview2-ui-coordinates").get_item(Key={"uid": job_id})
-
-    if "Item" in resp:
-        ret = resp["Item"]
-        return Coordinate(
-            start_lon=ret["start_lon"],
-            start_lat=ret["start_lat"],
-            end_lon=ret["end_lon"],
-            end_lat=ret["end_lat"],
-        )
-    else:
-        return None
+    resp = get_pdb_coordinate(conn, job_id)
+    return resp
 
 
 @app.get("/job-status")
