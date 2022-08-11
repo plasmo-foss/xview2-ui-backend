@@ -320,7 +320,7 @@ def create_postgres_tables(conn):
                     osmid TEXT UNIQUE,
                     dmg float4 NOT NULL,
                     area float8 NOT NULL,
-                    geometry geometry NOT NULL
+                    geometry geometry(POLYGON,4326) NOT NULL
                 )"""
             )
 

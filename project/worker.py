@@ -7,6 +7,7 @@ from decimal import Decimal
 import geopandas as gpd
 import osmnx as ox
 from celery import Celery
+from .utils import insert_pdb_status
 
 from schemas.osmgeojson import OsmGeoJson
 from schemas.routes import SearchOsmPolygons
@@ -57,21 +58,13 @@ def run_xv(args: list) -> None:
 @celery.task()
 def store_results(in_file: str, job_id: str):
     gdf = gpd.read_file(in_file)
-    item = json.loads(gdf.reset_index().to_json(), parse_float=Decimal)
-    
-    # df.to_json does not output the crs currently. Existing bug filed (and PR). Stop gap until that is implemented.
-    # https://github.com/geopandas/geopandas/issues/1774
-    authority, code = gdf.crs.to_authority()
-    ogc_crs = f"urn:ogc:def:crs:{authority}::{code}"
-    item["crs"] = {"type": "name", "properties": {"name": ogc_crs}}
-    
-    ddb.Table("xview2-ui-results").put_item(
-        Item={"uid": job_id, "geojson": item}
-    )
+    gdf = gdf.to_crs(4326)
+
+    # Push results to Postgres
+    engine = rdspostgis_sa_client()
+    gdf.to_postgis("xviewui_results", engine, if_exists='append')
 
     # Update job status
-    ddb.Table("xview2-ui-status").put_item(
-        Item={"uid": job_id, "status": "done"}
-    )
+    insert_pdb_status(conn, job_id, "done")
 
     return

@@ -98,12 +98,6 @@ def send_coordinates(coordinate: Coordinate) -> str:
     # Convert floats to Decimals
     item = json.loads(coordinate.json(), parse_float=Decimal)
 
-    # Insert into DynamoDB
-    ddb.Table("xview2-ui-coordinates").put_item(Item={"uid": str(uid), **item})
-    ddb.Table("xview2-ui-status").put_item(
-        Item={"uid": str(uid), "status": "waiting_imagery"}
-    )
-
     insert_pdb_coordinates(conn, uid, item)
     insert_pdb_status(conn, uid, "waiting_imagery")
 
@@ -254,9 +248,7 @@ def launch_assessment(body: LaunchAssessment):
     result = infer.apply_async()
 
     # Update job status
-    ddb.Table("xview2-ui-status").put_item(
-        Item={"uid": str(body.job_id), "status": "running_assessment"}
-    )
+    update_pdb_status(conn, body.job_id, "running_assessment")
 
     return ret_counter
 
@@ -273,14 +265,13 @@ def fetch_assessment(job_id: str):
             return float(obj)
         raise TypeError
 
-    resp = ddb.Table("xview2-ui-results").get_item(Key={"uid": job_id})
+    engine = rdspostgis_sa_client()
+    sql = f"SELECT geometry FROM xviewui_results WHERE uid='{job_id}'"
+    gdf = gpd.GeoDataFrame.from_postgis(sql, engine, geom_col="geometry")
 
     # The stored response is in a local, projected CRS. We reproject to EPSG 4326 for Deck.gl to render.
-    if "Item" in resp:
-        crs = resp["Item"]["geojson"]["crs"]["properties"]["name"].split("::")[1]
-        gdf = gpd.read_file(dumps(resp["Item"]["geojson"]), driver="GeoJSON")
-        gdf = gdf.set_crs(crs, allow_override=True)
-        return json.loads(gdf.to_crs(4326).to_json())
+    if gdf is not None:
+        return json.loads(gdf.to_json())
     else:
         return None
 
