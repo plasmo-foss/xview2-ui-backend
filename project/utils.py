@@ -296,7 +296,7 @@ def create_postgres_tables(conn):
                 """CREATE TABLE xviewui_osm_polys (
                     uid uuid NOT NULL,
                     osmid TEXT,
-                    geometry geometry(POLYGON,4326) NOT NULL
+                    geometry geometry(MultiPolygon,4326) NOT NULL
                 );"""
             )
 
@@ -320,7 +320,7 @@ def create_postgres_tables(conn):
                     osmid TEXT,
                     dmg float4 NOT NULL,
                     area float8 NOT NULL,
-                    geometry geometry(POLYGON,4326) NOT NULL
+                    geometry geometry(MultiPolygon,4326) NOT NULL
                 )"""
             )
 
