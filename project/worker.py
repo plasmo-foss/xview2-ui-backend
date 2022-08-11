@@ -1,16 +1,17 @@
+import json
 import os
 import subprocess
 import sys
+from decimal import Decimal
 
+import geopandas as gpd
+import osmnx as ox
 from celery import Celery
+
 from schemas.osmgeojson import OsmGeoJson
 from schemas.routes import SearchOsmPolygons
-from utils import order_coordinate, osm_geom_to_poly_geojson, awsddb_client
-from decimal import Decimal
-import json
-import osmnx as ox
-import geopandas as gpd
-
+from utils import (awsddb_client, order_coordinate, osm_geom_to_poly_geojson,
+                   rdspostgis_client, rdspostgis_sa_client)
 
 celery = Celery(__name__)
 celery.conf.broker_url = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379")
@@ -19,6 +20,7 @@ celery.conf.result_backend = os.environ.get(
 )
 
 ddb = awsddb_client()
+conn = rdspostgis_client()
 
 
 @celery.task()
@@ -29,15 +31,16 @@ def get_osm_polys(job_id: str, out_file: str, bbox: tuple, osm_tags: dict = {"bu
     cols = ["geometry", "osmid"]
     gdf = gdf.reset_index()
     gdf = gdf.loc[gdf.element_type != "node", cols]
+    gdf['uid'] = job_id
+
+    gdf.to_file(out_file)
+
+    engine = rdspostgis_sa_client()
+    gdf.to_postgis("xviewui_osm_polys", engine, if_exists='append')
+    print("Pushed OSM polys to PG")
 
     item = json.loads(gdf.reset_index().to_json(), parse_float=Decimal)
     # Todo: add CRS info to geojson
-
-    ddb.Table("xview2-ui-osm-polys").put_item(
-        Item={"uid": job_id, "geojson": item}
-    )
-
-    gdf.to_file(out_file)
 
     return item
 
