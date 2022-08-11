@@ -37,7 +37,6 @@ def get_osm_polys(job_id: str, out_file: str, bbox: tuple, osm_tags: dict = {"bu
 
     engine = rdspostgis_sa_client()
     gdf.to_postgis("xviewui_osm_polys", engine, if_exists='append')
-    print("Pushed OSM polys to PG")
 
     item = json.loads(gdf.reset_index().to_json(), parse_float=Decimal)
     # Todo: add CRS info to geojson
