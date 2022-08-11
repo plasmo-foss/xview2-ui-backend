@@ -389,3 +389,16 @@ def get_pdb_coordinate(conn, uid):
         start_lat=start_lat,
         start_lon=start_lon
     )
+
+def get_pdb_status(conn, uid):
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            SELECT * FROM xviewui_status
+            WHERE uid = '{uid}';
+        """)
+        record = cur.fetchone()
+
+    if record is None:
+        return None
+    else:
+        return record[1]
