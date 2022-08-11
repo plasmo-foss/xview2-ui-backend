@@ -17,7 +17,8 @@ from schemas import (Coordinate, FetchPlanetImagery, LaunchAssessment,
 from utils import (Converter, awsddb_client, create_bounding_box_poly,
                    create_postgres_tables, download_planet_imagery,
                    get_planet_imagery, order_coordinate, rdspostgis_client,
-                   insert_pdb_coordinates, insert_pdb_status, get_pdb_coordinate)
+                   insert_pdb_coordinates, insert_pdb_status, get_pdb_coordinate,
+                   get_pdb_status)
 from worker import get_osm_polys, run_xv, store_results
 
 
@@ -100,12 +101,15 @@ def fetch_coordinates(job_id: str) -> Coordinate:
 @app.get("/job-status")
 def job_status(job_id: str) -> Dict:
 
-    resp = ddb.Table("xview2-ui-status").get_item(Key={"uid": job_id})
+    resp = get_pdb_status(conn, job_id)
 
-    if "Item" in resp:
-        return resp["Item"]
-    else:
+    if resp is None:
         return None
+    else:
+        return {
+            'uid': job_id,
+            'status': resp
+        }
 
 
 @app.get("/fetch-osm-polygons", response_model=OsmGeoJson)
