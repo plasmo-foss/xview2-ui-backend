@@ -18,7 +18,7 @@ from utils import (Converter, awsddb_client, create_bounding_box_poly,
                    create_postgres_tables, download_planet_imagery,
                    get_planet_imagery, order_coordinate, rdspostgis_client,
                    insert_pdb_coordinates, insert_pdb_status, get_pdb_coordinate,
-                   get_pdb_status)
+                   get_pdb_status, rdspostgis_sa_client)
 from worker import get_osm_polys, run_xv, store_results
 
 
@@ -123,12 +123,17 @@ def fetch_osm_polygons(job_id: str) -> Dict:
         Returns:
             osm_geojson (dict): The FeatureCollection representing all building polygons for the bounding box
     """
-    resp = ddb.Table("xview2-ui-osm-polys").get_item(Key={"uid": job_id})
+    engine = rdspostgis_sa_client()
+    sql = "SELECT geometry FROM xviewui_osm_polys"
+    gdf = gpd.GeoDataFrame.from_postgis(sql, engine, geom_col='geometry')
 
-    if "Item" in resp:
-        return resp["Item"]
-    else:
+    if gdf is None:
         return None
+    else:
+        return {
+            'uid': job_id,
+            'geojson': json.loads(gdf.to_json())
+        }
 
 
 @app.post("/fetch-planet-imagery", response_model=Planet)
