@@ -266,7 +266,7 @@ def fetch_assessment(job_id: str):
         raise TypeError
 
     engine = rdspostgis_sa_client()
-    sql = f"SELECT geometry FROM xviewui_results WHERE uid='{job_id}'"
+    sql = f"SELECT dmg, geometry FROM xviewui_results WHERE uid='{job_id}'"
     gdf = gpd.GeoDataFrame.from_postgis(sql, engine, geom_col="geometry")
 
     # The stored response is in a local, projected CRS. We reproject to EPSG 4326 for Deck.gl to render.
