@@ -38,7 +38,7 @@ from utils import (
     rdspostgis_sa_client,
     update_pdb_status,
 )
-from worker import get_osm_polys, run_xv, store_results
+from worker import get_osm_polys, run_xv, store_results, task_error_callback
 
 
 def verify_key(access_key: str = Header("null")) -> bool:
@@ -232,8 +232,8 @@ def launch_assessment(body: LaunchAssessment):
 
     # Run our celery tasks
     infer = (
-        get_osm_polys.s(converter.job_id, str(osm_out_path), bbox)
-        | run_xv.si(args)
+        get_osm_polys.si(converter.job_id, str(osm_out_path), bbox)
+        | run_xv.si(converter.job_id, args)
         | store_results.si(
             str(
                 converter.output_dir
@@ -245,10 +245,11 @@ def launch_assessment(body: LaunchAssessment):
             converter.job_id,
         )
     )
-    result = infer.apply_async()
 
     # Update job status
     update_pdb_status(conn, body.job_id, "running_assessment")
+
+    result = infer.apply_async(link_error=task_error_callback.s(converter.job_id))
 
     return ret_counter
 
@@ -273,7 +274,7 @@ def fetch_assessment(job_id: str):
     if gdf is not None:
         return json.loads(gdf.to_json())
     else:
-        return None
+        return None    
 
 
 # No longer works but this is how we should call our chain/chord
