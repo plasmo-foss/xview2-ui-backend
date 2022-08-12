@@ -29,8 +29,8 @@ celery.conf.result_backend = os.environ.get(
     "CELERY_RESULT_BACKEND", "redis://localhost:6379"
 )
 
-ddb = awsddb_client()
-conn = rdspostgis_client()
+#ddb = awsddb_client()
+#conn = rdspostgis_client()
 
 
 def parse_status(state):
@@ -45,6 +45,7 @@ def make_status(task_name, state):
 
 
 def publish_task_status(job_id, task_name, state):
+    conn = rdspostgis_client()
     task_status = make_status(task_name, state)
     print(f"Publishing task status {task_status} for job_id={job_id}")
     update_pdb_status(conn, job_id, task_status)
@@ -122,6 +123,7 @@ def store_results(self, in_file: str, job_id: str):
     gdf.to_postgis("xviewui_results", engine, if_exists="append")
 
     # Update job status
+    conn = rdspostgis_client()
     update_pdb_status(conn, job_id, "done")
     #publish_task_status(job_id, self.request.task, STATE_END)
 
