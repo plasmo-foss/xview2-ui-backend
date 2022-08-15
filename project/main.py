@@ -21,7 +21,6 @@ from schemas import (
     SearchOsmPolygons,
 )
 from utils import (
-    Converter,
     awsddb_client,
     create_bounding_box_poly,
     create_postgres_tables,
@@ -39,6 +38,7 @@ from utils import (
     update_pdb_status,
 )
 from worker import get_osm_polys, run_xv, store_results, task_error_callback
+from downloader import TileDataset
 
 
 def verify_key(access_key: str = Header("null")) -> bool:
@@ -189,14 +189,13 @@ def launch_assessment(body: LaunchAssessment):
     # Download the images for given job
     coords = fetch_coordinates(body.job_id)
 
+    # Convert the coordinates to a Shapely polygon
+    bounding_box = create_bounding_box_poly(coords)
+
+    temp_dir_path = Path(os.getenv("PLANET_IMAGERY_TEMP_DIR"))
+    output_dir_path = Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR"))
+
     for pre_post in ["pre", "post"]:
-        converter = Converter(
-            Path(os.getenv("PLANET_IMAGERY_TEMP_DIR")),
-            Path(os.getenv("PLANET_IMAGERY_OUTPUT_DIR")),
-            coords,
-            18,
-            body.job_id,
-        )
         if pre_post == "pre":
             image = body.pre_image_id
         else:
@@ -204,54 +203,51 @@ def launch_assessment(body: LaunchAssessment):
 
         url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image}/{{z}}/{{x}}/{{y}}.png?api_key={os.getenv('PLANET_API_KEY')}"
 
-        # Todo: celery-ize this...well maybe later...don't think we can pass the converter object through serialization
-        ret_counter = download_planet_imagery(
-            converter=converter, url=url, prepost=pre_post
-        )
+        download_planet_imagery(url, pre_post, output_dir_path, body.job_id, bounding_box)
 
     # Prepare our args for fetching OSM data
     bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
     osm_out_path = (
-        converter.output_dir
-        / converter.job_id
+        output_dir_path
+        / body.job_id
         / "in_polys"
-        / f"{converter.job_id}_osm_poly.geojson"
+        / f"{body.job_id}_osm_poly.geojson"
     ).resolve()
     osm_out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Prepare our args for xv2 run
     args = []
-    args += ["--pre_directory", str(converter.output_dir / converter.job_id / "pre")]
-    args += ["--post_directory", str(converter.output_dir / converter.job_id / "post")]
+    args += ["--pre_directory", str(output_dir_path / body.job_id / "pre")]
+    args += ["--post_directory", str(output_dir_path / body.job_id / "post")]
     args += [
         "--output_directory",
-        str(converter.output_dir / converter.job_id / "output"),
+        str(output_dir_path / body.job_id / "output"),
     ]
     # Todo: check that we got polygons before we write the file, and make sure we have the file before we pass it as an arg
     args += ["--bldg_polys", str(osm_out_path)]
 
     # Run our celery tasks
     infer = (
-        get_osm_polys.si(converter.job_id, str(osm_out_path), bbox)
-        | run_xv.si(converter.job_id, args)
+        get_osm_polys.si(body.job_id, str(osm_out_path), bbox)
+        | run_xv.si(body.job_id, args)
         | store_results.si(
             str(
-                converter.output_dir
-                / converter.job_id
+                output_dir_path
+                / body.job_id
                 / "output"
                 / "vector"
                 / "damage.geojson"
             ),
-            converter.job_id,
+            body.job_id,
         )
     )
 
     # Update job status
     update_pdb_status(conn, body.job_id, "running_assessment")
 
-    result = infer.apply_async(link_error=task_error_callback.s(converter.job_id))
+    result = infer.apply_async(link_error=task_error_callback.s(body.job_id))
 
-    return ret_counter
+    return None
 
 
 @app.get("/fetch-assessment")
