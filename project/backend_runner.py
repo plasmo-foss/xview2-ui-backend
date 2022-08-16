@@ -4,6 +4,9 @@ import json
 from imagery import Imagery
 from pathlib import Path
 from worker import get_osm_polys
+import geopandas as gpd
+from decimal import Decimal
+from db import ddb
 
 
 def init():
@@ -50,8 +53,11 @@ def init():
     )
     osm_args.set_defaults(func=fetch_polys)
 
-    # Todo;
-    # args for wrapping up inference (push json to DB)
+    # args for persisting results from geojson
+    persist_args = subparsers.add_parser("persist_res", help="Persist results from GeoJSON file")
+    persist_args.add_argument("--job_id", required=True, help="Job ID")
+    persist_args.add_argument("--geojson", required=True, help="GeoJSON file to persist results")
+    persist_args.set_defaults(func=persist_results)
 
     args = parser.parse_args()
     return args.func(args)
@@ -93,6 +99,24 @@ def fetch_polys(args):
             args.coordinates.get("start_lon")
         ),
     )
+
+    return
+
+
+def persist_results(args):
+    gdf = gpd.read_file(args.in_file)
+    item = json.loads(gdf.reset_index().to_json(), parse_float=Decimal)
+
+    # df.to_json does not output the crs currently. Existing bug filed (and PR). Stop gap until that is implemented.
+    # https://github.com/geopandas/geopandas/issues/1774
+    authority, code = gdf.crs.to_authority()
+    ogc_crs = f"urn:ogc:def:crs:{authority}::{code}"
+    item["crs"] = {"type": "name", "properties": {"name": ogc_crs}}
+
+    ddb.Table("xview2-ui-results").put_item(Item={"uid": args.job_id, "geojson": item})
+
+    # Update job status
+    ddb.Table("xview2-ui-status").put_item(Item={"uid": args.job_id, "status": "done"})
 
     return
 
