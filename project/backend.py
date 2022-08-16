@@ -148,7 +148,8 @@ class SkyML(Backend):
 
         remote_pre_in_dir = "/input/pre"
         remote_post_in_dir = "/input/post"
-        remote_poly_dir = "input/polys"
+        remote_poly_dir = "/input/polys"
+        remote_output_dir = "/output"
 
         try:
             with sky.Dag() as dag:
@@ -166,10 +167,15 @@ class SkyML(Backend):
             )
             # working imagery command:
             # docker run --rm xview2uibackend conda run -n xv2_backend python backend_runner.py --task imagery --api_key API --provider Planet --job_id 70c560e1-c10e-42e9-b99f-c25310cb4489 --image_id 20211122_205605_ssc14_u0001 --coordinates '{"start_lon": -84.51025876666456, "start_lat": 39.135462800807794, "end_lon": -84.50162668204827, "end_lat": 39.12701207640838}' --out_path /Downloads/output --temp_path /temp --pre_post pre
-            
+
             # pull backend_runner container
-            sky.exec(self._make_dag("aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 316880547378.dkr.ecr.us-east-1.amazonaws.com && docker pull 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest"), cluster_name=CLUSTER_NAME)
-            
+            sky.exec(
+                self._make_dag(
+                    "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 316880547378.dkr.ecr.us-east-1.amazonaws.com && docker pull 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest"
+                ),
+                cluster_name=CLUSTER_NAME,
+            )
+
             # get imagery
             for pre_post in ["pre", "post"]:
 
@@ -181,16 +187,34 @@ class SkyML(Backend):
                     remote_dir = remote_post_in_dir
 
                 sky.exec(
-                    self._make_dag(f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path ~/output --temp_path ~/temp --pre_post {pre_post}"), cluster_name=CLUSTER_NAME,
+                    self._make_dag(
+                        f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path ~/output --temp_path ~/temp --pre_post {pre_post}"
+                    ),
+                    cluster_name=CLUSTER_NAME,
                 )
 
             # get OSM polygons
-            sky.exec(self._make_dag(f"docker run --rm -v {remote_poly_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py fetch_polys --job_id {job_id} --coordinates '{json.dumps(poly_dict)}'"))
+            sky.exec(
+                self._make_dag(
+                    f"docker run --rm -v {remote_poly_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py fetch_polys --job_id {job_id} --coordinates '{json.dumps(poly_dict)}'"
+                )
+            )
 
             # run xv2
             # Todo: pass OSM polys
             sky.exec(
-                self._make_dag(f"docker run --rm -v {remote_pre_in_dir}:/input/pre -v {remote_post_in_dir}:/input/post -v /output_temp:/output --gpus all 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest && mv /output_temp /output", gpu=True),
+                self._make_dag(
+                    f"docker run --rm -v {remote_pre_in_dir}:/input/pre -v {remote_post_in_dir}:/input/post -v /output_temp:/output --gpus all 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest && mv /output_temp {remote_output_dir}",
+                    gpu=True,
+                ),
+                cluster_name=CLUSTER_NAME,
+            )
+
+            # persist results
+            sky.exec(
+                self._make_dag(
+                    f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py persist_results --job_id {job_id} --geojson {remote_output_dir}/vector/damage.geojson"
+                ),
                 cluster_name=CLUSTER_NAME,
             )
 
