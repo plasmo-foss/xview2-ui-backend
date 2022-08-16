@@ -40,7 +40,7 @@ def init():
     im_args.set_defaults(func=fetch_imagery)
 
     # args for fetching OSM polys
-    osm_args = subparsers.add_parser("fetch_osm", help="Fetch OSM building footprints")
+    osm_args = subparsers.add_parser("fetch_polys", help="Fetch OSM building footprints")
     osm_args.add_argument("--job_id", required=True, help="Job ID")
     osm_args.add_argument(
         "--coordinates",
@@ -48,7 +48,7 @@ def init():
         type=json.loads,
         help="Dictionary from Coordinate object",
     )
-    osm_args.set_defaults(func=fetch_osm)
+    osm_args.set_defaults(func=fetch_polys)
 
     # Todo;
     # args for wrapping up inference (push json to DB)
@@ -81,7 +81,7 @@ def fetch_imagery(args):
     return
 
 
-def fetch_osm(args):
+def fetch_polys(args):
     # Todo: test me!
     get_osm_polys(
         args.job_id,

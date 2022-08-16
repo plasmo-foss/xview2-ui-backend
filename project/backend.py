@@ -148,6 +148,7 @@ class SkyML(Backend):
 
         remote_pre_in_dir = "/input/pre"
         remote_post_in_dir = "/input/post"
+        remote_poly_dir = "input/polys"
 
         try:
             with sky.Dag() as dag:
@@ -180,11 +181,14 @@ class SkyML(Backend):
                     remote_dir = remote_post_in_dir
 
                 sky.exec(
-                    self._make_dag(f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --temp_path /temp --pre_post {pre_post}"), cluster_name=CLUSTER_NAME,
+                    self._make_dag(f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path ~/output --temp_path ~/temp --pre_post {pre_post}"), cluster_name=CLUSTER_NAME,
                 )
 
+            # get OSM polygons
+            sky.exec(self._make_dag(f"docker run --rm -v {remote_poly_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py fetch_polys --job_id {job_id} --coordinates '{json.dumps(poly_dict)}'"))
+
             # run xv2
-            # Todo: get OSM polys
+            # Todo: pass OSM polys
             sky.exec(
                 self._make_dag(f"docker run --rm -v {remote_pre_in_dir}:/input/pre -v {remote_post_in_dir}:/input/post -v /output_temp:/output --gpus all 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest && mv /output_temp /output", gpu=True),
                 cluster_name=CLUSTER_NAME,
