@@ -13,6 +13,7 @@ class Backend(ABC):
 
     @classmethod
     def get_backend(cls, backend: str):
+        # Todo: This should get provider from .env
         """Returns appropriate backend class given input string
 
         Args:
@@ -87,35 +88,29 @@ class Local(Backend):
 class SkyML(Backend):
     # Todo:
     # 1. Persist OSM results
-    # 2. Remove Docker for backend_runner (it already gets synced)
-    # 3. Explore multi-stage build for backend and xv2 inf engine
+    # 2. Explore multi-stage Docker builds for backend and xv2 inf engine
+    # 3. Test for OSM polys before passing to inf engine
 
     def __init__(self) -> None:
         super().__init__()
         self.provider = "Sky"
         self.ACCELERATORS = {"V100": 1}
 
-    def _make_dag(self, command, gpu=False):
+        self.LOCAL_MNT = "/home/ubuntu/output"
+
+        self.remote_pre_in_dir = "~/input/pre"
+        self.remote_post_in_dir = "~/input/post"
+        self.remote_poly_dir = "~/input/polys"
+
+    def _make_task(self, command, gpu=False):
         """Wraps a command into a sky.Dag."""
-        print(command)
+        print(command) # Debug: remove for production
         with sky.Dag() as dag:
             task = sky.Task(run=command)
             if gpu:
                 task.set_resources(sky.Resources(accelerators=self.ACCELERATORS))
 
-        return dag
-
-    def get_code_base(self, repo_url: str):
-        cmd = "git clone https://github.com/RitwikGupta/xView2-Vulcan.git && conda create -n xv2 --file xView2-Vulcan/spec-file.txt"
-
-        return self._make_dag(cmd)
-
-    def get_weights(self, url: str, tmp_name: str, out_path: str):
-        cmd = f"wget {url} -O {tmp_name}\n"
-        cmd += f"mkdir -p {out_path}\n"
-        cmd += f"tar -xzvf {tmp_name} -C {out_path} && rm {tmp_name}"
-
-        return self._make_dag(cmd)
+        return sky.exec(dag, cluster_name=self.cluster_name)
 
     def get_imagery(
         self,
@@ -128,17 +123,19 @@ class SkyML(Backend):
         poly_dict: dict,
         pre_post: str,
     ):
-        cmd = f"conda run -n xv2_backend python imagery.py --provider {img_provider} --api_key {api_key} --job_id {job_id} --image_id {image_id} --out_path {out_path} --temp_path {temp_path} --pre_post {pre_post} --coordinates '{json.dumps(poly_dict)}'"
-        # command that works!
-        # conda run -n xv2 python imagery.py --provider Planet --api_key API --job_id 70c560e1-c10e-42e9-b99f-c25310cb4489 --image_id 20211122_205605_ssc14_u0001 --out_path ~/input/pre --temp_path ~/temp --pre_post pre --coordinates '{"start_lon": -84.51025876666456, "start_lat": 39.135462800807794, "end_lon": -84.50162668204827, "end_lat": 39.12701207640838}'
-        return self._make_dag(cmd)
+        # get imagery
+        for pre_post in ["pre", "post"]:
 
-    def get_polygons(self):
-        pass
+            if pre_post == "pre":
+                img_id = self.pre_image_id
+                remote_dir = self.remote_pre_in_dir
+            else:
+                img_id = self.post_image_id
+                remote_dir = self.remote_post_in_dir
 
-    def run_xv(self, pre_dir, post_dir, out_dir, local_mnt):
-        cmd = f"cd xView2-Vulcan && conda run -n xv2 python handler.py --pre_directory {pre_dir} --post_directory {post_dir} --output_directory {out_dir} && cp -r {out_dir}/* {local_mnt}"
-        return self._make_dag(cmd, gpu=True)
+            self._make_task(
+                f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --temp_path ~/temp --pre_post {pre_post}"
+            )
 
     def launch(
         self,
@@ -149,12 +146,9 @@ class SkyML(Backend):
         img_provider: str,
         poly_dict: dict,
     ):
-        LOCAL_MNT = "/output"
-        CLUSTER_NAME = f"xv2-inf-{job_id[-5:]}"
 
-        remote_pre_in_dir = "~/input/pre"
-        remote_post_in_dir = "~/input/post"
-        remote_poly_dir = "~/input/polys"
+        # set this to be used in task creation
+        self.cluster_name = f"xv2-inf-{job_id[-5:]}"
 
         try:
             with sky.Dag() as dag:
@@ -162,59 +156,44 @@ class SkyML(Backend):
                 task = sky.Task(run="echo start", workdir=".").set_resources(resources)
                 store = sky.Storage(name=s3_bucket)
                 store.add_store("S3")
-                task.set_storage_mounts({LOCAL_MNT: store})
+                task.set_storage_mounts({self.LOCAL_MNT: store})
 
             sky.launch(
                 dag,
-                cluster_name=CLUSTER_NAME,
+                cluster_name=self.cluster_name,
                 retry_until_up=True,
-                idle_minutes_to_autostop=60,  # Todo: Change autostop time (used currently for debugging)
+                idle_minutes_to_autostop=20,  # Todo: Change autostop time (used currently for debugging)
             )
-            # working imagery command:
-            # docker run --rm xview2uibackend conda run -n xv2_backend python backend_runner.py --task imagery --api_key API --provider Planet --job_id 70c560e1-c10e-42e9-b99f-c25310cb4489 --image_id 20211122_205605_ssc14_u0001 --coordinates '{"start_lon": -84.51025876666456, "start_lat": 39.135462800807794, "end_lon": -84.50162668204827, "end_lat": 39.12701207640838}' --out_path /Downloads/output --temp_path /temp --pre_post pre
 
             # pull backend_runner container
-            sky.exec(
-                self._make_dag(
-                    "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 316880547378.dkr.ecr.us-east-1.amazonaws.com && docker pull 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest"
-                ),
-                cluster_name=CLUSTER_NAME,
+            self._make_task(
+                "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 316880547378.dkr.ecr.us-east-1.amazonaws.com && docker pull 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest"
             )
 
             # get imagery
             for pre_post in ["pre", "post"]:
 
                 if pre_post == "pre":
-                    img_id = pre_image_id
-                    remote_dir = remote_pre_in_dir
+                    img_id = self.pre_image_id
+                    remote_dir = self.remote_pre_in_dir
                 else:
-                    img_id = post_image_id
-                    remote_dir = remote_post_in_dir
+                    img_id = self.post_image_id
+                    remote_dir = self.remote_post_in_dir
 
-                sky.exec(
-                    self._make_dag(
-                        f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --temp_path ~/temp --pre_post {pre_post}"
-                    ),
-                    cluster_name=CLUSTER_NAME,
+                self._make_task(
+                    f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --temp_path ~/temp --pre_post {pre_post}"
                 )
 
             # get OSM polygons
-            sky.exec(
-                self._make_dag(
-                    f"docker run --rm -v {remote_poly_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py fetch_polys --job_id {job_id} --coordinates '{json.dumps(poly_dict)}'"
-                ),
-                cluster_name=CLUSTER_NAME,
+            self._make_task(
+                f"docker run --rm -v {self.remote_poly_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py fetch_polys --job_id {job_id} --coordinates '{json.dumps(poly_dict)}'"
             )
 
             # run xv2
-            # Todo: pass OSM polys
             temp_out = "~/output_temp"
-            sky.exec(
-                self._make_dag(
-                    f"docker run --rm --shm-size 56g -v {remote_pre_in_dir}:/input/pre -v {remote_post_in_dir}:/input/post -v {temp_out}:/output -v {remote_poly_dir}:/input/polys --gpus all 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest --bldg_polys /input/polys/polys.geojson && mv {temp_out} {LOCAL_MNT}/{job_id}",
-                    gpu=True,
-                ),
-                cluster_name=CLUSTER_NAME,
+            self._make_task(
+                f"docker run --rm --shm-size 56g -v {self.remote_pre_in_dir}:/input/pre -v {self.remote_post_in_dir}:/input/post -v {temp_out}:/output -v {self.remote_poly_dir}:/input/polys --gpus all 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest --bldg_polys /input/polys/polys.geojson && mkdir {self.LOCAL_MNT}/{job_id} && cp -r {temp_out}/* {self.LOCAL_MNT}/{job_id}",
+                gpu=True,
             )
 
             # # persist results
@@ -228,6 +207,7 @@ class SkyML(Backend):
         except:
             pass
 
+        # Todo: activate this in production
         # finally:
         #     # Teardown instance
         #     # See https://github.com/sky-proj/sky/pull/978 for future use of Python API
