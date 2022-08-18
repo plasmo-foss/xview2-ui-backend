@@ -165,7 +165,7 @@ class SkyML(Backend):
                 idle_minutes_to_autostop=20,  # Todo: Change autostop time (used currently for debugging)
             )
 
-            # pull backend_runner container
+            # pull backend container
             self._make_task(
                 "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 316880547378.dkr.ecr.us-east-1.amazonaws.com && docker pull 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest"
             )
@@ -174,10 +174,10 @@ class SkyML(Backend):
             for pre_post in ["pre", "post"]:
 
                 if pre_post == "pre":
-                    img_id = self.pre_image_id
+                    img_id = pre_image_id
                     remote_dir = self.remote_pre_in_dir
                 else:
-                    img_id = self.post_image_id
+                    img_id = post_image_id
                     remote_dir = self.remote_post_in_dir
 
                 self._make_task(
