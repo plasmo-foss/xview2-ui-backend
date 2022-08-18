@@ -207,13 +207,9 @@ class SkyML(Backend):
         except:
             pass
 
-        # Todo: activate this in production
-        # finally:
-        #     # Teardown instance
-        #     # See https://github.com/sky-proj/sky/pull/978 for future use of Python API
-        #     handle = sky.global_user_state.get_handle_from_cluster_name(CLUSTER)
-        #     sky.backends.CloudVmRayBackend().teardown(handle, terminate=True)
-
+        # teardown instance after inference is complete
+        finally:
+            sky.down(self.cluster_name)
 
 # job polling
 # In the CLI world, you can poll for the prior jobs (each exec = 1 job) statuses and wait until they are done (sky logs CLUSTER JOB_ID --status). We don’t have a nice API to directly call for this at the moment.
