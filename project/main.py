@@ -4,11 +4,13 @@ import uuid
 from datetime import datetime
 from decimal import Decimal 
 from typing import Dict, List
-import dateutil.parser
+import dateutil
 from dateutil.relativedelta import relativedelta
+
+import geopandas as gpd
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-import geopandas as gpd
+from fastapi.responses import JSONResponse
 
 from schemas import (
     Coordinate,
@@ -18,11 +20,26 @@ from schemas import (
     Planet,
     SearchOsmPolygons,
 )
-from utils import create_bounding_box_poly, order_coordinate
-from db import awsddb_client, get_coordinates
-
 from imagery import Imagery
-from worker import get_osm_polys, run_xv, store_results, get_imagery
+from utils import (
+    #awsddb_client,
+    create_bounding_box_poly,
+    create_postgres_tables,
+    #download_planet_imagery,
+    get_pdb_coordinate,
+    get_pdb_status,
+    get_planet_imagery,
+    insert_pdb_coordinates,
+    insert_pdb_planet_result,
+    insert_pdb_selected_imagery,
+    insert_pdb_status,
+    order_coordinate,
+    rdspostgis_client,
+    rdspostgis_sa_client,
+    update_pdb_status,
+)
+from worker import get_osm_polys, run_xv, store_results, task_error_callback
+from downloader import TileDataset
 
 
 def verify_key(access_key: str = Header("null")) -> bool:
@@ -44,6 +61,7 @@ app = FastAPI(
 
 client = None
 ddb = None
+cursor = None
 
 conf = load_dotenv(override=True)
 
@@ -53,8 +71,18 @@ access_keys = {}
 @app.on_event("startup")
 async def startup_event():
     global ddb
+    global conn
     global access_keys
-    ddb = awsddb_client()
+
+    # Set up DynamoDB
+    # Todo: remove ddb references
+    # ddb = awsddb_client()
+
+    # Create connection to AWS RDS Postgres
+    conn = rdspostgis_client()
+    create_postgres_tables(conn)
+
+    # Load valid access keys into memory
     access_keys = set(
         [key.strip() for key in open(".env.access_keys", "r").readlines()]
     )
@@ -72,33 +100,33 @@ def send_coordinates(coordinate: Coordinate) -> str:
     # Convert floats to Decimals
     item = json.loads(coordinate.json(), parse_float=Decimal)
 
-    # Insert into DynamoDB
-    ddb.Table("xview2-ui-coordinates").put_item(Item={"uid": str(uid), **item})
-    ddb.Table("xview2-ui-status").put_item(
-        Item={"uid": str(uid), "status": "waiting_imagery"}
-    )
+    insert_pdb_coordinates(conn, uid, item)
+    insert_pdb_status(conn, uid, "waiting_imagery")
 
     return uid
 
 
 @app.get("/fetch-coordinates", response_model=Coordinate)
 def fetch_coordinates(job_id: str) -> Coordinate:
-    return get_coordinates(job_id)
+
+    resp = get_pdb_coordinate(conn, job_id)
+    return resp
 
 
 @app.get("/job-status")
 def job_status(job_id: str) -> Dict:
 
-    resp = ddb.Table("xview2-ui-status").get_item(Key={"uid": job_id})
+    resp = get_pdb_status(conn, job_id)
 
-    if "Item" in resp:
-        return resp["Item"]
-    else:
+    if resp is None:
         return None
+    else:
+        return {"uid": job_id, "status": resp}
 
 
 @app.get("/fetch-osm-polygons", response_model=OsmGeoJson)
 def fetch_osm_polygons(job_id: str) -> Dict:
+    # Todo: Move this work to 'utils' and point backend runner to the utils implementation
     """
     Returns GeoJSON for a Job ID that exists in DynamoDB.
 
@@ -108,12 +136,16 @@ def fetch_osm_polygons(job_id: str) -> Dict:
         Returns:
             osm_geojson (dict): The FeatureCollection representing all building polygons for the bounding box
     """
-    resp = ddb.Table("xview2-ui-osm-polys").get_item(Key={"uid": job_id})
+    engine = rdspostgis_sa_client()
+    sql = f"SELECT geometry FROM xviewui_osm_polys WHERE uid='{job_id}'"
+    gdf = gpd.GeoDataFrame.from_postgis(sql, engine, geom_col="geometry")
 
-    if "Item" in resp:
-        return resp["Item"]
-    else:
+    geojson = json.loads(gdf.to_json())
+
+    if len(geojson["features"]) == 0:
         return None
+    else:
+        return {"uid": job_id, "geojson": geojson}
 
 
 @app.post("/fetch-planet-imagery", response_model=Planet)
@@ -128,20 +160,15 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
     end_date = dateutil.parser.isoparse(body.current_date)
     start_date = end_date - relativedelta(years=1)
 
-    converter = Imagery.get_provider(
-        os.getenv("IMG_PROVIDER"), os.getenv("PLANET_API_KEY")
+    converter = Imagery.get_provider(os.getenv("IMG_PROVIDER"), os.getenv("PLANET_API_KEY")
     )
 
     imagery_list = converter.get_imagery_list_helper(bounding_box, start_date, end_date)
 
-    ddb.Table("xview2-ui-planet-api").put_item(
-        Item={"uid": str(body.job_id), "planet_response": imagery_list}
-    )
+    insert_pdb_planet_result(conn, body.job_id, json.dumps(imagery_list))
 
-    # Update job status
-    ddb.Table("xview2-ui-status").put_item(
-        Item={"uid": str(body.job_id), "status": "waiting_assessment"}
-    )
+    # Update status of job
+    update_pdb_status(conn, body.job_id, "waiting_assessment")
 
     return Planet(uid=body.job_id, images=imagery_list)
 
@@ -149,13 +176,9 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
 @app.post("/launch-assessment")
 def launch_assessment(body: LaunchAssessment):
 
-    # Persist the response to DynamoDB
-    ddb.Table("xview2-ui-selected-imagery").put_item(
-        Item={
-            "uid": body.job_id,
-            "pre_image_id": body.pre_image_id,
-            "post_image_id": body.post_image_id,
-        }
+    # Insert selected imagery IDs to Postgres
+    insert_pdb_selected_imagery(
+        conn, body.job_id, body.pre_image_id, body.post_image_id
     )
 
     # Download the images for given job
@@ -171,14 +194,14 @@ def launch_assessment(body: LaunchAssessment):
         get_osm=True,
         poly_dict=dict(coords),
     )
-    result = infer.apply_async()
+
 
     # Update job status
-    ddb.Table("xview2-ui-status").put_item(
-        Item={"uid": str(body.job_id), "status": "running_assessment"}
-    )
+    update_pdb_status(conn, body.job_id, "running_assessment")
 
-    return
+    result = infer.apply_async(link_error=task_error_callback.s(body.job_id))
+
+    return None
 
 
 @app.get("/fetch-assessment")
@@ -193,17 +216,15 @@ def fetch_assessment(job_id: str):
             return float(obj)
         raise TypeError
 
-    resp = ddb.Table("xview2-ui-results").get_item(Key={"uid": job_id})
+    engine = rdspostgis_sa_client()
+    sql = f"SELECT dmg, geometry FROM xviewui_results WHERE uid='{job_id}'"
+    gdf = gpd.GeoDataFrame.from_postgis(sql, engine, geom_col="geometry")
 
     # The stored response is in a local, projected CRS. We reproject to EPSG 4326 for Deck.gl to render.
-    if "Item" in resp:
-        crs = resp["Item"]["geojson"]["crs"]["properties"]["name"].split("::")[1]
-        gdf = gpd.read_file(dumps(resp["Item"]["geojson"]), driver="GeoJSON")
-        gdf = gdf.set_crs(crs, allow_override=True)
-        return json.loads(gdf.to_crs(4326).to_json())
+    if gdf is not None:
+        return json.loads(gdf.to_json())
     else:
-        return None
-
+        return None    
 
 # No longer works but this is how we should call our chain/chord
 # @app.get("/test-celery")

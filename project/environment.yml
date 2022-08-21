@@ -10,3 +10,6 @@ dependencies:
   - xmltodict
   - pydantic
   - python=3.9
+  - opencv
+  - mercantile
+  - psycopg2
