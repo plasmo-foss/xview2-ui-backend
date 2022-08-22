@@ -39,7 +39,6 @@ from utils import (
     update_pdb_status,
 )
 from worker import get_osm_polys, run_xv, store_results, task_error_callback
-from downloader import TileDataset
 
 
 def verify_key(access_key: str = Header("null")) -> bool:

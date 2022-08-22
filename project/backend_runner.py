@@ -36,9 +36,6 @@ def init():
     im_args.add_argument("--image_id", required=True, help="ID of image to retrieve")
     im_args.add_argument("--out_path", required=True, help="Path to save image(s)")
     im_args.add_argument(
-        "--temp_path", required=True, help="Path for storage of temporary files"
-    )
-    im_args.add_argument(
         "--pre_post",
         required=True,
         help="String indicating whether this is 'pre' or 'post' imagery",
@@ -79,13 +76,12 @@ def fetch_imagery(args):
     )
     poly = create_bounding_box_poly(coords)
 
-    temp_path = Path(args.temp_path)
     out_path = Path(args.out_path)
 
     provider = Imagery.get_provider(args.provider, args.api_key)
     print(
         provider.download_imagery_helper(
-            args.job_id, args.pre_post, args.image_id, poly, temp_path, out_path
+            args.job_id, args.pre_post, args.image_id, poly, out_path
         ).resolve()
     )
 
@@ -93,7 +89,7 @@ def fetch_imagery(args):
 
 
 def fetch_polys(args):
-    # Todo: test me!
+    # Todo: test me!...move logic to utils
     gdf = ox.geometries_from_bbox(
         args.coordinates.get("start_lat"),
         args.coordinates.get("end_lat"),

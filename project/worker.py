@@ -90,25 +90,6 @@ def get_osm_polys(self,
     return item
 
 
-# @celery.task()
-# def get_imagery(job_id, pre_post, image_id, bbox, temp_path, out_path):
-#     coords = get_coordinates(job_id)
-#     bounding_box = create_bounding_box_poly(coords)
-
-#     converter = Imagery.get_provider(
-#         os.getenv("IMG_PROVIDER"), os.geten("PLANET_API_KEY")
-#     )
-#     converter.download_imagery_helper(
-#         job_id, pre_post, image_id, bounding_box, Path(temp_path), Path(out_path),
-#     )
-
-#     converter = Imagery.get_provider(
-#         os.getenv("IMG_PROVIDER"), os.geten("PLANET_API_KEY")
-#     )
-#     converter.download_imagery_helper(
-#         job_id, pre_post, image_id, bounding_box, Path(temp_path), Path(out_path),
-#     )
-
 @celery.task()
 def run_xv(
     job_id: str, pre_image_id: str, post_image_id: str, get_osm: bool, poly_dict: dict

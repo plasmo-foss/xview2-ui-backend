@@ -13,3 +13,4 @@ dependencies:
   - opencv
   - mercantile
   - psycopg2
+  - sqlalchemy

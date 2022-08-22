@@ -28,3 +28,6 @@ class TestPlanet:
         planet = PlanetIM('null')
         res = planet.get_url_list('20220605_234920_ssc16_u0001', bbox_poly)
         assert res == False
+
+    def test_download_imagery(self, bbox_poly):
+        pass

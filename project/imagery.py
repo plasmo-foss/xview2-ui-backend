@@ -3,6 +3,16 @@ import json
 import shutil
 import urllib.request
 import xmltodict
+import mercantile
+
+# Todo: find replacement for cv2...it seems to break every environment!
+import cv2
+import rasterio
+import numpy as np
+import shapely
+import rasterio.merge
+from queue import Queue
+import threading
 
 import planet.api as api
 import requests
@@ -15,7 +25,175 @@ from rasterio.crs import CRS
 from requests.auth import HTTPBasicAuth
 from shapely.geometry import Polygon, mapping
 from schemas import Coordinate
-from utils import bbox_to_xyz, x_to_lon_edges, y_to_lat_edges
+
+# from utils import bbox_to_xyz, x_to_lon_edges, y_to_lat_edges
+
+
+class TileDataset:
+    def __init__(self, url, output_dir, bounding_box, zoom, job_id):
+        self.subdomains = ["tiles0", "tiles1", "tiles2", "tiles3"]
+        self.url = url
+        self.output_dir = output_dir
+        self.bounding_box = bounding_box
+        self.zoom = zoom
+        self.job_id = job_id
+
+    def _get_image_from_tile(self, tile):
+        """
+        Args:
+            tile: a mercantile Tile object
+        Returns
+            a np.ndarray of size 256x256x3 with uint8 datatype containing the imagery
+                for the input tile
+        """
+        url = self.url.format(
+            subdomain=np.random.choice(self.subdomains), x=tile.x, y=tile.y, z=tile.z
+        )
+        with requests.get(url) as r:
+            arr = np.asarray(bytearray(r.content), dtype=np.uint8)
+        img = cv2.imdecode(arr, -1)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        return img
+
+    def _get_tile_as_virtual_raster(self, tile):
+        """
+        Args:
+            tile: a mercantile Tile object
+        Returns
+            a rasterio.io.MemoryFile with the imagery for the input tile
+        """
+        img = self._get_image_from_tile(tile)
+        geom = shapely.geometry.shape(mercantile.feature(tile)["geometry"])
+        minx, miny, maxx, maxy = geom.bounds
+        dst_transform = rasterio.transform.from_bounds(minx, miny, maxx, maxy, 256, 256)
+        dst_profile = {
+            "driver": "GTiff",
+            "width": 256,
+            "height": 256,
+            "transform": dst_transform,
+            "nodata": 0,
+            "crs": "epsg:4326",
+            "count": 3,
+            "dtype": "uint8",
+        }
+        test_f = rasterio.io.MemoryFile()
+        with test_f.open(**dst_profile) as test_d:
+            test_d.write(img[:, :, 0], 1)
+            test_d.write(img[:, :, 1], 2)
+            test_d.write(img[:, :, 2], 3)
+        test_f.seek(0)
+
+        return test_f
+
+    def _dequeue_get_tile_as_virtual_raster(self, q, virtual_files, virtual_datasets):
+        while not q.empty():
+            tile = q.get()
+            f = self._get_tile_as_virtual_raster(tile)
+            virtual_files.append(f)
+            virtual_datasets.append(f.open())
+            q.task_done()
+
+    def get_data_from_extent(self, geom, zoom_level=16):
+        """Gets georeferenced imagery from the input geom at a given zoom level.
+        Specifically, this will iterate over all the quadkeys in the input geom at the
+        given zoom level and save the imagery as a virtual raster. The virtual raster
+        lets us either quickly read the data or quickly write it to file as a GeoTIFF.
+        Args:
+            geom: A geojson object in EPSG:4326 (i.e. with lat/lon coordinates)
+        Returns:
+            a rasterio.io.MemoryFile with the corresponding data
+        """
+        shape = shapely.geometry.shape(geom)
+        minx, miny, maxx, maxy = shape.bounds
+
+        virtual_files = []
+        virtual_datasets = []
+
+        output_width_degrees = maxx - minx
+        output_height_degrees = maxy - miny
+        if output_width_degrees > 1 or output_height_degrees > 1:
+            raise ValueError(
+                "Trying to export file with height or width larger than a degree which"
+                + " will result in a huge output tile. The input geom should be split"
+                + " up into smaller chunks."
+            )
+
+        # TODO: This should _probably_ be done multithreaded
+        # for tile in mercantile.tiles(minx, miny, maxx, maxy, zoom_level):
+        #     f = self._get_tile_as_virtual_raster(tile)
+        #     virtual_files.append(f)
+        #     virtual_datasets.append(f.open())
+
+        tile_queue = Queue()
+        num_threads = 4
+        num_tiles = 0
+        for tile in mercantile.tiles(minx, miny, maxx, maxy, zoom_level):
+            tile_queue.put(tile)
+            num_tiles += 1
+
+        print(f"Fetching {num_tiles} tiles...")
+
+        for i in range(num_threads):
+            thread = threading.Thread(
+                target=self._dequeue_get_tile_as_virtual_raster,
+                args=(tile_queue, virtual_files, virtual_datasets),
+            )
+            thread.start()
+
+        tile_queue.join()
+
+        # get the largest x and y resolutions over all patches to use as the merged tile
+        # resolution if we don't explicitly set this, then it is likely that some of
+        # the patches not have the correct resolution (they will be off by tiny
+        # fractions of a degree) and there will be single nodata lines between rows of
+        # tiles
+        x_res = 0
+        y_res = 0
+        for ds in virtual_datasets:
+            x_res = max(x_res, ds.res[0])
+            y_res = max(y_res, ds.res[1])
+
+        out_image, out_transform = rasterio.merge.merge(
+            virtual_datasets, res=(x_res, y_res), bounds=(minx, miny, maxx, maxy),
+        )
+
+        for ds in virtual_datasets:
+            ds.close()
+        for f in virtual_files:
+            f.close()
+
+        dst_crs = "epsg:4326"
+        dst_profile = {
+            "driver": "GTiff",
+            "width": out_image.shape[2],
+            "height": out_image.shape[1],
+            "transform": out_transform,
+            "crs": dst_crs,
+            "count": 3,
+            "dtype": "uint8",
+        }
+        test_f = rasterio.io.MemoryFile()
+        with test_f.open(**dst_profile) as test_d:
+            test_d.write(out_image)
+        test_f.seek(0)
+
+        return test_f
+
+    def save_memory_file_to_disk(self, memory_file, prepost):
+        with memory_file.open() as src:
+            profile = src.profile.copy()
+            profile["compress"] = ("lzw",)
+            profile["predictor"] = 2
+            output_path = (
+                self.output_dir
+                / self.job_id
+                / prepost
+                / f"{self.job_id}_{prepost}_merged.tif"
+            )
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with rasterio.open(output_path, "w", **profile) as dst:
+                dst.write(src.read())
 
 
 class Imagery(ABC):
@@ -68,7 +246,6 @@ class Imagery(ABC):
         pre_post: str,
         image_id: str,
         geometry: Polygon,
-        tmp_path: Path,
         out_path: Path,
     ) -> Path:
         """helper for downloading imagery
@@ -85,75 +262,70 @@ class Imagery(ABC):
             Path: path to saved image
         """
 
-        tmp_path = tmp_path / job_id / pre_post
-
-        tmp_path.mkdir(parents=True, exist_ok=True)
         out_path.mkdir(parents=True, exist_ok=True)
 
         result = self.download_imagery(
-            job_id, pre_post, image_id, geometry, tmp_path, out_path
+            job_id, pre_post, image_id, geometry, out_path
         )
-
-        shutil.rmtree(tmp_path.parent)
 
         return result
 
-    def calculate_dims(self, coords: tuple, res: float = 0.5) -> tuple:
-        """Calculates height and width of raster given bounds and resolution
+    # def calculate_dims(self, coords: tuple, res: float = 0.5) -> tuple:
+    #     """Calculates height and width of raster given bounds and resolution
 
-        Args:
-            coords (tuple): bounds of input geometry
-            res (float): resolution of resulting raster
+    #     Args:
+    #         coords (tuple): bounds of input geometry
+    #         res (float): resolution of resulting raster
 
-        Returns:
-            tuple: height/width of raster
-        """
-        dims = calculate_default_transform(
-            CRS({"init": "EPSG:4326"}),
-            CRS({"init": "EPSG:3587"}),
-            10000,
-            10000,
-            left=coords[0],
-            bottom=coords[1],
-            right=coords[2],
-            top=coords[3],
-            resolution=res,
-        )
-        return (dims[1], dims[2])
+    #     Returns:
+    #         tuple: height/width of raster
+    #     """
+    #     dims = calculate_default_transform(
+    #         CRS({"init": "EPSG:4326"}),
+    #         CRS({"init": "EPSG:3587"}),
+    #         10000,
+    #         10000,
+    #         left=coords[0],
+    #         bottom=coords[1],
+    #         right=coords[2],
+    #         top=coords[3],
+    #         resolution=res,
+    #     )
+    #     return (dims[1], dims[2])
 
-    def tile_edges(self, x, y, z):
-        lat1, lat2 = y_to_lat_edges(y, z)
-        lon1, lon2 = x_to_lon_edges(x, z)
-        return [lon1, lat1, lon2, lat2]
+    # def tile_edges(self, x, y, z):
+    #     lat1, lat2 = y_to_lat_edges(y, z)
+    #     lon1, lon2 = x_to_lon_edges(x, z)
+    #     return [lon1, lat1, lon2, lat2]
 
-    def fetch_tile(self, x, y, z, tile_source, tmp_path):
-        url = (
-            tile_source.replace("{x}", str(x))
-            .replace("{y}", str(y))
-            .replace("{z}", str(z))
-        )
+    # def fetch_tile(self, x, y, z, tile_source, tmp_path):
+    #     url = (
+    #         tile_source.replace("{x}", str(x))
+    #         .replace("{y}", str(y))
+    #         .replace("{z}", str(z))
+    #     )
 
-        if not tile_source.startswith("http"):
-            return url.replace("file:///", "")
+    #     if not tile_source.startswith("http"):
+    #         return url.replace("file:///", "")
 
-        path = f"{tmp_path}/{x}_{y}_{z}.png"
-        urllib.request.urlretrieve(url, path)
-        return path
+    #     path = f"{tmp_path}/{x}_{y}_{z}.png"
+    #     urllib.request.urlretrieve(url, path)
+    #     return path
 
-    def merge_tiles(self, input_pattern, output_path, tmp_path):
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        vrt_path = tmp_path / "tiles.vrt"
-        gdal.BuildVRT(vrt_path.as_posix(), glob.glob(input_pattern))
-        gdal.Translate(output_path.as_posix(), vrt_path.as_posix())
+    # def merge_tiles(self, input_pattern, output_path, tmp_path):
+    #     output_path.parent.mkdir(parents=True, exist_ok=True)
+    #     vrt_path = tmp_path / "tiles.vrt"
+    #     gdal.BuildVRT(vrt_path.as_posix(), glob.glob(input_pattern))
+    #     gdal.Translate(output_path.as_posix(), vrt_path.as_posix())
 
-    def georeference_raster_tile(self, x, y, z, path, tmp_path):
-        bounds = self.tile_edges(x, y, z)
-        gdal.Translate(
-            (tmp_path / f"{x}_{y}_{z}.tif").as_posix(),
-            path,
-            outputSRS="EPSG:4326",
-            outputBounds=bounds,
-        )
+    # def georeference_raster_tile(self, x, y, z, path, tmp_path):
+    #     bounds = self.tile_edges(x, y, z)
+    #     gdal.Translate(
+    #         (tmp_path / f"{x}_{y}_{z}.tif").as_posix(),
+    #         path,
+    #         outputSRS="EPSG:4326",
+    #         outputBounds=bounds,
+    #     )
 
     @abstractmethod
     def get_imagery_list(
@@ -341,7 +513,6 @@ class PlanetIM(Imagery):
         ]  # Todo: this is not the url to the resource...just to the endpoint to get the url(s)
 
         return timestamps, images, urls
-        
 
     def download_imagery(
         self,
@@ -349,55 +520,20 @@ class PlanetIM(Imagery):
         pre_post: str,
         image_id: str,
         geometry: Polygon,
-        tmp_path: Path,
         out_dir: Path,
     ) -> str:
-        """
-        Take in the URL for a tile server and save the raster to disk
 
-        Parameters:
-            tile_source (str): the URL to the tile server
-            prepost: (str) whether or not the tile server URL is of pre or post-disaster imagery
+        subdomains = ["tiles0", "tiles1", "tiles2", "tiles3"]
+        url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image_id}/{{z}}/{{x}}/{{y}}.png?api_key={self.api_key}"
 
-        Returns:
-            ret_counter (int): how many tiles failed to download
-        """
+        ds = TileDataset(url, out_dir, geometry, 18, job_id)
 
-        zoom = 18
+        import time
 
-        url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image_id}/{zoom}/{{x}}/{{y}}.png?api_key={self.api_key}"
+        stime = time.time()
+        memory_file = ds.get_data_from_extent(geometry, zoom_level=18)
+        ds.save_memory_file_to_disk(memory_file, pre_post)
+        print(f"Fetched imagery in {time.time() - stime} seconds.")
 
-        bounds = geometry.bounds
+        return  # out_file
 
-        lon_min = bounds[0]
-        lat_min = bounds[1]
-        lon_max = bounds[2]
-        lat_max = bounds[3]
-
-        x_min, x_max, y_min, y_max = bbox_to_xyz(
-            lon_min, lon_max, lat_min, lat_max, zoom
-        )
-
-        print(
-            f"Fetching & georeferencing {(x_max - x_min + 1) * (y_max - y_min + 1)} tiles for {url}"
-        )
-
-        ret_counter = 0
-        for x in range(x_min, x_max + 1):
-            for y in range(y_min, y_max + 1):
-                try:
-                    png_path = self.fetch_tile(x, y, zoom, url, tmp_path)
-                    self.georeference_raster_tile(x, y, zoom, png_path, tmp_path)
-                except OSError:
-                    print(f"Error, failed to get {x},{y}")
-                    ret_counter += 1
-
-        print("Resolving and georeferencing of raster tiles complete")
-
-        # Todo: Should we just allow xV2 to do this?
-        print("Merging tiles")
-        out_file = out_dir / f"{job_id}_{pre_post}.tif"
-        self.merge_tiles((tmp_path / "*.tif").as_posix(), out_file, tmp_path)
-        print("Merge complete")
-
-        return out_file
