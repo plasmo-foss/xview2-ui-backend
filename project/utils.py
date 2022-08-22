@@ -165,20 +165,7 @@ def get_planet_imagery(api_key: str, geom: Polygon, current_date: str) -> dict:
         {"image_id": i["id"], "timestamp": i["properties"]["published"]} for i in items
     ]
 
-
 conf = load_dotenv(override=True)
-
-
-# Todo: remove all ddb references
-# def awsddb_client():
-
-#     return boto3.resource(
-#         "dynamodb",
-#         region_name=os.getenv("DB_REGION_NAME"),
-#         aws_access_key_id=os.getenv("DB_ACCESS_KEY_ID"),
-#         aws_secret_access_key=os.getenv("DB_SECRET_ACCESS_KEY"),
-#         endpoint_url=os.getenv("DB_ENDPOINT_URL"),
-#     )
 
 
 def rdspostgis_client():

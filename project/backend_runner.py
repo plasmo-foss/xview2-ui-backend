@@ -9,8 +9,6 @@ import osmnx as ox
 import geopandas as gpd
 from decimal import Decimal
 
-# from db import ddb
-
 
 def init():
     parser = argparse.ArgumentParser(
@@ -108,29 +106,10 @@ def fetch_polys(args):
     # Todo: add CRS info to geojson
 
     # Todo: persist
-    # ddb.Table("xview2-ui-osm-polys").put_item(Item={"uid": args.job_id, "geojson": item})
 
     gdf.to_file("/output/polys.geojson")
 
     return item
-
-
-# def persist_results(args):
-#     gdf = gpd.read_file(args.in_file)
-#     item = json.loads(gdf.reset_index().to_json(), parse_float=Decimal)
-
-#     # df.to_json does not output the crs currently. Existing bug filed (and PR). Stop gap until that is implemented.
-#     # https://github.com/geopandas/geopandas/issues/1774
-#     authority, code = gdf.crs.to_authority()
-#     ogc_crs = f"urn:ogc:def:crs:{authority}::{code}"
-#     item["crs"] = {"type": "name", "properties": {"name": ogc_crs}}
-
-#     ddb.Table("xview2-ui-results").put_item(Item={"uid": args.job_id, "geojson": item})
-
-#     # Update job status
-#     ddb.Table("xview2-ui-status").put_item(Item={"uid": args.job_id, "status": "done"})
-
-#     return
 
 
 if __name__ == "__main__":

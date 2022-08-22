@@ -12,7 +12,6 @@ from shapely.geometry.polygon import Polygon
 from schemas.osmgeojson import OsmGeoJson
 from schemas.routes import SearchOsmPolygons
 from utils import (
-    # awsddb_client,
     insert_pdb_status,
     order_coordinate,
     osm_geom_to_poly_geojson,
@@ -34,9 +33,7 @@ celery.conf.result_backend = os.environ.get(
     "CELERY_RESULT_BACKEND", "redis://localhost:6379"
 )
 
-#ddb = awsddb_client()
 #conn = rdspostgis_client()
-
 
 def parse_status(state):
     pieces = state.parse(STATE_DELIMITER)

@@ -270,62 +270,6 @@ class Imagery(ABC):
 
         return result
 
-    # def calculate_dims(self, coords: tuple, res: float = 0.5) -> tuple:
-    #     """Calculates height and width of raster given bounds and resolution
-
-    #     Args:
-    #         coords (tuple): bounds of input geometry
-    #         res (float): resolution of resulting raster
-
-    #     Returns:
-    #         tuple: height/width of raster
-    #     """
-    #     dims = calculate_default_transform(
-    #         CRS({"init": "EPSG:4326"}),
-    #         CRS({"init": "EPSG:3587"}),
-    #         10000,
-    #         10000,
-    #         left=coords[0],
-    #         bottom=coords[1],
-    #         right=coords[2],
-    #         top=coords[3],
-    #         resolution=res,
-    #     )
-    #     return (dims[1], dims[2])
-
-    # def tile_edges(self, x, y, z):
-    #     lat1, lat2 = y_to_lat_edges(y, z)
-    #     lon1, lon2 = x_to_lon_edges(x, z)
-    #     return [lon1, lat1, lon2, lat2]
-
-    # def fetch_tile(self, x, y, z, tile_source, tmp_path):
-    #     url = (
-    #         tile_source.replace("{x}", str(x))
-    #         .replace("{y}", str(y))
-    #         .replace("{z}", str(z))
-    #     )
-
-    #     if not tile_source.startswith("http"):
-    #         return url.replace("file:///", "")
-
-    #     path = f"{tmp_path}/{x}_{y}_{z}.png"
-    #     urllib.request.urlretrieve(url, path)
-    #     return path
-
-    # def merge_tiles(self, input_pattern, output_path, tmp_path):
-    #     output_path.parent.mkdir(parents=True, exist_ok=True)
-    #     vrt_path = tmp_path / "tiles.vrt"
-    #     gdal.BuildVRT(vrt_path.as_posix(), glob.glob(input_pattern))
-    #     gdal.Translate(output_path.as_posix(), vrt_path.as_posix())
-
-    # def georeference_raster_tile(self, x, y, z, path, tmp_path):
-    #     bounds = self.tile_edges(x, y, z)
-    #     gdal.Translate(
-    #         (tmp_path / f"{x}_{y}_{z}.tif").as_posix(),
-    #         path,
-    #         outputSRS="EPSG:4326",
-    #         outputBounds=bounds,
-    #     )
 
     @abstractmethod
     def get_imagery_list(

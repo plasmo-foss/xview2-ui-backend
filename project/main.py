@@ -22,10 +22,8 @@ from schemas import (
 )
 from imagery import Imagery
 from utils import (
-    #awsddb_client,
     create_bounding_box_poly,
     create_postgres_tables,
-    #download_planet_imagery,
     get_pdb_coordinate,
     get_pdb_status,
     get_planet_imagery,
@@ -59,7 +57,6 @@ app = FastAPI(
 )
 
 client = None
-ddb = None
 cursor = None
 
 conf = load_dotenv(override=True)
@@ -69,13 +66,8 @@ access_keys = {}
 
 @app.on_event("startup")
 async def startup_event():
-    global ddb
     global conn
     global access_keys
-
-    # Set up DynamoDB
-    # Todo: remove ddb references
-    # ddb = awsddb_client()
 
     # Create connection to AWS RDS Postgres
     conn = rdspostgis_client()
@@ -205,10 +197,6 @@ def launch_assessment(body: LaunchAssessment):
 
 @app.get("/fetch-assessment")
 def fetch_assessment(job_id: str):
-
-    # Required for serialization of DDB object
-    def dumps(item: dict) -> str:
-        return json.dumps(item, default=default_type_error_handler)
 
     def default_type_error_handler(obj):
         if isinstance(obj, Decimal):
