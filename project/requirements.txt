@@ -9,4 +9,4 @@ requests
 uvicorn==0.13.4
 boto3
 python-dotenv
-skypilot=0.1.1
+skypilot==0.1.1

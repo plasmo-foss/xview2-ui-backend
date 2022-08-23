@@ -5,7 +5,7 @@ import urllib.request
 import xmltodict
 import mercantile
 
-# Todo: find replacement for cv2...it seems to break every environment!
+# Todo: find replacement for cv2...it seems to break every environment! When replacement is found remove line in Dockerfile
 import cv2
 import rasterio
 import numpy as np

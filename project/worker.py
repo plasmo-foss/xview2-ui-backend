@@ -14,7 +14,6 @@ from schemas.routes import SearchOsmPolygons
 from utils import (
     insert_pdb_status,
     order_coordinate,
-    osm_geom_to_poly_geojson,
     rdspostgis_client,
     rdspostgis_sa_client,
     update_pdb_status

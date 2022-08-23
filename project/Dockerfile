@@ -12,6 +12,8 @@ ENV PYTHONUNBUFFERED 1
 RUN apt-get update && \
     apt-get install -y build-essential  && \
     apt-get install -y wget && \
+    # The following line to unfuck cv2 because...cv2
+    apt-get install -y ffmpeg libsm6 libxext6 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

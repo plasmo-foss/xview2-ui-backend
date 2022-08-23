@@ -32,7 +32,6 @@ class Backend(ABC):
         api_key: str,
         job_id: str,
         image_id: str,
-        temp_path: str,
         out_path: str,
         poly_dict: dict,
         pre_post: str,
@@ -44,7 +43,6 @@ class Backend(ABC):
             api_key (str): API key for imagery provider
             job_id (str): job ID
             image_id (str): imagery provider image_id
-            temp_path (str): temp download path
             out_path (str): output imagery path
             poly_dict (dict): dictionary of AOI
             pre_post (str): string indicating "pre" or "post" imagery
@@ -118,7 +116,6 @@ class SkyML(Backend):
         api_key: str,
         job_id: str,
         image_id: str,
-        temp_path: str,
         out_path: str,
         poly_dict: dict,
         pre_post: str,
@@ -134,7 +131,7 @@ class SkyML(Backend):
                 remote_dir = self.remote_post_in_dir
 
             self._make_task(
-                f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --temp_path ~/temp --pre_post {pre_post}"
+                f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --pre_post {pre_post}"
             )
 
     def launch(
@@ -181,7 +178,7 @@ class SkyML(Backend):
                     remote_dir = self.remote_post_in_dir
 
                 self._make_task(
-                    f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --temp_path ~/temp --pre_post {pre_post}"
+                    f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --pre_post {pre_post}"
                 )
 
             # get OSM polygons
