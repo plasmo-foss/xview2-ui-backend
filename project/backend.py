@@ -2,10 +2,13 @@ import sky
 from abc import ABC, abstractmethod
 import os
 import json
+import boto3
+import geopandas as gpd
 from imagery import Imagery
 from schemas import Coordinate
 from pathlib import Path
-
+from shapely.geometry import Polygon, MultiPolygon
+from utils import rdspostgis_sa_client, rdspostgis_client, update_pdb_status
 
 class Backend(ABC):
     def __init__(self) -> None:
@@ -93,7 +96,6 @@ class SkyML(Backend):
         super().__init__()
         self.provider = "Sky"
         self.ACCELERATORS = {"V100": 1}
-
         self.LOCAL_MNT = "/home/ubuntu/output"
 
         self.remote_pre_in_dir = "~/input/pre"
@@ -102,7 +104,7 @@ class SkyML(Backend):
 
     def _make_task(self, command, gpu=False):
         """Wraps a command into a sky.Dag."""
-        print(command) # Debug: remove for production
+        print(command)  # Debug: remove for production
         with sky.Dag() as dag:
             task = sky.Task(run=command)
             if gpu:
@@ -193,20 +195,38 @@ class SkyML(Backend):
                 gpu=True,
             )
 
-            # # persist results
-            # sky.exec(
-            #     self._make_dag(
-            #         f"docker run --rm -v {remote_output_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py persist_results --job_id {job_id} --geojson {remote_output_dir}/vector/damage.geojson"
-            #     ),
-            #     cluster_name=CLUSTER_NAME,
-            # )
-
         except:
             pass
 
-        # teardown instance after inference is complete
+        else:
+            # persist results
+            s3 = boto3.resource("s3")
+
+            json_content = json.loads(
+                s3.Object(s3_bucket, f"{job_id}/vector/damage.geojson")
+                .get()["Body"]
+                .read()
+                .decode("utf-8")
+            )
+
+            gdf = gpd.GeoDataFrame.from_features(json_content, crs=json_content.get('crs').get('properties').get('name'))
+            gdf['uid'] = job_id
+            gdf = gdf.to_crs(4326)
+
+            gdf["geometry"] = [MultiPolygon([feature]) if isinstance(feature, Polygon) else feature for feature in gdf["geometry"]]
+
+            # Push results to Postgres
+            engine = rdspostgis_sa_client()
+            gdf.to_postgis("xviewui_results", engine, if_exists="append")
+
+            # Update job status
+            conn = rdspostgis_client()
+            update_pdb_status(conn, job_id, "done")
+
+        # teardown instance
         finally:
             sky.down(self.cluster_name)
+
 
 # job polling
 # In the CLI world, you can poll for the prior jobs (each exec = 1 job) statuses and wait until they are done (sky logs CLUSTER JOB_ID --status). We don’t have a nice API to directly call for this at the moment.

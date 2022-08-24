@@ -172,10 +172,7 @@ def launch_assessment(body: LaunchAssessment):
         conn, body.job_id, body.pre_image_id, body.post_image_id
     )
 
-    # Download the images for given job
     coords = fetch_coordinates(body.job_id)
-    bounding_box = create_bounding_box_poly(coords)
-    bbox = (coords.start_lat, coords.end_lat, coords.end_lon, coords.start_lon)
 
     # Run our celery tasks
     infer = run_xv.si(
