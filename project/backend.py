@@ -16,7 +16,6 @@ class Backend(ABC):
 
     @classmethod
     def get_backend(cls, backend: str):
-        # Todo: This should get provider from .env
         """Returns appropriate backend class given input string
 
         Args:
