@@ -13,13 +13,15 @@ class Planet(BaseModel):
                 "item_type": "SkySatCollect",
                 "item_id": "20220407_120032_ssc6_u0001",
                 "provider": "Planet",
+                "return_type": "tileset",
                 "url": "https://tile{1-3}...."
             },
             {
                 "timestamp": "2022-04-04T11:57:06Z",
-                "item_type": "SkySatCollect",
+                "item_type": "DF_Feature",
                 "item_id": "20220404_083931_ssc4_u0001",
-                "provider": "Planet",
+                "provider": "MAXAR",
+                "return_type": "raster",
                 "url": "Leaflet/Deck.gl compatible url"
             },
         ],
