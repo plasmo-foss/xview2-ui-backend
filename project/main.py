@@ -151,8 +151,7 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
     end_date = dateutil.parser.isoparse(body.current_date)
     start_date = end_date - relativedelta(years=1)
 
-    converter = Imagery.get_provider(os.getenv("IMG_PROVIDER"), os.getenv("PLANET_API_KEY")
-    )
+    converter = Imagery.get_provider(os.getenv("IMG_PROVIDER"))
 
     imagery_list = converter.get_imagery_list_helper(bounding_box, start_date, end_date)
 

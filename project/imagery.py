@@ -1,6 +1,7 @@
 import glob
 import json
 import shutil
+import os
 import urllib.request
 import xmltodict
 import mercantile
@@ -31,6 +32,7 @@ from schemas import Coordinate
 TILESET = "tileset"
 RASTER = "raster"
 
+
 class TileDataset:
     def __init__(self, url, output_dir, bounding_box, zoom, job_id):
         self.subdomains = ["tiles0", "tiles1", "tiles2", "tiles3"]
@@ -39,7 +41,6 @@ class TileDataset:
         self.bounding_box = bounding_box
         self.zoom = zoom
         self.job_id = job_id
-
 
     def _get_image_from_tile(self, tile):
         """
@@ -208,13 +209,18 @@ class Imagery(ABC):
         self.item_type = None
         self.return_type = None
 
-
     @classmethod
-    def get_provider(cls, provider, api_key):
+    def get_provider(cls, provider, api_key=None):
         if provider == "Planet":
+            if not api_key:
+                api_key = os.getenv("PLANET_API_KEY")
             return PlanetIM(api_key)
+
         elif provider == "MAXAR":
+            if not api_key:
+                api_key = os.getenv("MAXAR_API_KEY")
             return MAXARIM(api_key)
+
         else:
             raise ValueError("Unsupported imagery provider provided")
 
@@ -270,12 +276,9 @@ class Imagery(ABC):
 
         out_path.mkdir(parents=True, exist_ok=True)
 
-        result = self.download_imagery(
-            job_id, pre_post, image_id, geometry, out_path
-        )
+        result = self.download_imagery(job_id, pre_post, image_id, geometry, out_path)
 
         return result
-
 
     @abstractmethod
     def get_imagery_list(
