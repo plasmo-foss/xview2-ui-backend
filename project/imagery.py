@@ -38,6 +38,7 @@ class TileDataset:
         self.zoom = zoom
         self.job_id = job_id
 
+
     def _get_image_from_tile(self, tile):
         """
         Args:
@@ -203,6 +204,18 @@ class Imagery(ABC):
         self.api_key = api_key
         self.provider = None
         self.item_type = None
+        self.return_type = None
+
+
+    @classmethod
+    def tileset():
+        return "tileset"
+
+
+    @classmethod
+    def raster():
+        return "raster"
+
 
     @classmethod
     def get_provider(cls, provider, api_key):
@@ -235,6 +248,7 @@ class Imagery(ABC):
                 "item_type": self.item_type,
                 "item_id": i[1],
                 "provider": self.provider,
+                "return_type": self.return_type,
                 "url": i[2],
             }
             for i in zip(timestamps, images, urls)
@@ -320,6 +334,7 @@ class MAXARIM(Imagery):
         super().__init__(api_key)
         self.provider = "MAXAR"
         self.item_type = "DG_Feature"
+        self.return_type = Imagery.raster()
 
     def get_imagery_list(
         self, geometry: Polygon, start_date: str, end_date: str
@@ -425,6 +440,7 @@ class PlanetIM(Imagery):
         super().__init__(api_key)
         self.provider = "Planet"
         self.item_type = "SkySatCollect"
+        self.return_type = self.tileset()
 
     def get_imagery_list(
         self, geometry: Polygon, start_date: str, end_date: str
