@@ -77,10 +77,8 @@ def fetch_imagery(args):
     out_path = Path(args.out_path)
 
     provider = Imagery.get_provider(args.provider, args.api_key)
-    print(
-        provider.download_imagery_helper(
-            args.job_id, args.pre_post, args.image_id, poly, out_path
-        ).resolve()
+    provider.download_imagery_helper(
+        args.job_id, args.pre_post, args.image_id, poly, out_path
     )
 
     return
