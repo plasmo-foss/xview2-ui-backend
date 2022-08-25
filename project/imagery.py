@@ -28,6 +28,8 @@ from schemas import Coordinate
 
 # from utils import bbox_to_xyz, x_to_lon_edges, y_to_lat_edges
 
+TILESET = "tileset"
+RASTER = "raster"
 
 class TileDataset:
     def __init__(self, url, output_dir, bounding_box, zoom, job_id):
@@ -208,16 +210,6 @@ class Imagery(ABC):
 
 
     @classmethod
-    def tileset():
-        return "tileset"
-
-
-    @classmethod
-    def raster():
-        return "raster"
-
-
-    @classmethod
     def get_provider(cls, provider, api_key):
         if provider == "Planet":
             return PlanetIM(api_key)
@@ -334,7 +326,7 @@ class MAXARIM(Imagery):
         super().__init__(api_key)
         self.provider = "MAXAR"
         self.item_type = "DG_Feature"
-        self.return_type = Imagery.raster()
+        self.return_type = RASTER
 
     def get_imagery_list(
         self, geometry: Polygon, start_date: str, end_date: str
@@ -440,7 +432,7 @@ class PlanetIM(Imagery):
         super().__init__(api_key)
         self.provider = "Planet"
         self.item_type = "SkySatCollect"
-        self.return_type = self.tileset()
+        self.return_type = TILESET
 
     def get_imagery_list(
         self, geometry: Polygon, start_date: str, end_date: str

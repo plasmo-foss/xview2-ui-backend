@@ -53,12 +53,6 @@ def init():
     )
     osm_args.set_defaults(func=fetch_polys)
 
-    # # args for persisting results from geojson
-    # persist_args = subparsers.add_parser("persist_results", help="Persist results from GeoJSON file")
-    # persist_args.add_argument("--job_id", required=True, help="Job ID")
-    # persist_args.add_argument("--geojson", required=True, help="GeoJSON file to persist results")
-    # persist_args.set_defaults(func=persist_results)
-
     args = parser.parse_args()
     return args.func(args)
 
