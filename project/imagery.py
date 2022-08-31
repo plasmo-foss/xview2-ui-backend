@@ -324,12 +324,42 @@ class Imagery(ABC):
         pass
 
 
+class Local(Imagery):
+    # Maybe use GeoTrellis: https://geotrellis.io/
+    pass
+
+
 class MAXARIM(Imagery):
     def __init__(self, api_key: str) -> None:
         super().__init__(api_key)
         self.provider = "MAXAR"
         self.item_type = "DG_Feature"
         self.return_type = RASTER
+
+
+    def calculate_dims(self, coords: tuple, res: float = 0.5) -> tuple:
+        """Calculates height and width of raster given bounds and resolution
+
+        Args:
+            coords (tuple): bounds of input geometry
+            res (float): resolution of resulting raster
+
+        Returns:
+            tuple: height/width of raster
+        """
+        dims = calculate_default_transform(
+            CRS({"init": "EPSG:4326"}),
+            CRS({"init": "EPSG:3587"}),
+            10000,
+            10000,
+            left=coords[0],
+            bottom=coords[1],
+            right=coords[2],
+            top=coords[3],
+            resolution=res,
+        )
+        return (dims[1], dims[2])
+
 
     def get_imagery_list(
         self, geometry: Polygon, start_date: str, end_date: str
@@ -402,7 +432,6 @@ class MAXARIM(Imagery):
         prepost: str,
         image_id: str,
         geometry: Polygon,
-        temp_dir: str,
         out_dir: str,
     ) -> bool:
         """

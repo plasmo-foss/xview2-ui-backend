@@ -11,6 +11,7 @@ from shapely.geometry.polygon import Polygon
 
 from schemas.osmgeojson import OsmGeoJson
 from schemas.routes import SearchOsmPolygons
+from imagery import Imagery
 from utils import (
     insert_pdb_status,
     order_coordinate,
@@ -92,12 +93,14 @@ def run_xv(
 ) -> None:
 
     b_end = Backend.get_backend(os.getenv("BACKEND"))
+    im_provider = Imagery.get_provider(os.getenv("IMG_PROVIDER"))
     b_end.launch(
         "xv2-outputs",
         job_id,
         pre_image_id,
         post_image_id,
         os.getenv("IMG_PROVIDER"),
+        im_provider.api_key,
         poly_dict,
     )
 
