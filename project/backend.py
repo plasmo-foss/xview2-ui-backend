@@ -88,18 +88,20 @@ class Local(Backend):
 class SkyML(Backend):
     # Todo:
     # 1. Persist OSM results
-    # 2. Explore multi-stage Docker builds for backend and xv2 inf engine
+    # 2. Add ability to skip OMS polygons (ie. if polygons are no good for an area)
     # 3. Test for OSM polys before passing to inf engine
+    # 4. Explore multi-stage Docker builds with Conda-pack (https://pythonspeed.com/articles/conda-docker-image-size/)
 
     def __init__(self) -> None:
         super().__init__()
         self.provider = "Sky"
-        self.ACCELERATORS = {"V100": 1}
+        self.ACCELERATORS = {"V100": 4}
         self.LOCAL_MNT = "/home/ubuntu/output"
 
-        self.remote_pre_in_dir = "~/input/pre"
-        self.remote_post_in_dir = "~/input/post"
-        self.remote_poly_dir = "~/input/polys"
+        self.remote_pre_in_dir = "/home/ubuntu/input/pre"
+        self.remote_post_in_dir = "/home/ubuntu/input/post"
+        self.remote_poly_dir = "/home/ubuntu/input/polys"
+        self.remote_temp_out = "/home/ubuntu/output_temp"
 
     def _make_task(self, command, gpu=False):
         """Wraps a command into a sky.Dag."""
@@ -142,6 +144,7 @@ class SkyML(Backend):
         pre_image_id: str,
         post_image_id: str,
         img_provider: str,
+        img_api_key: str,
         poly_dict: dict,
     ):
 
@@ -179,7 +182,7 @@ class SkyML(Backend):
                     remote_dir = self.remote_post_in_dir
 
                 self._make_task(
-                    f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --pre_post {pre_post}"
+                    f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {img_api_key} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --pre_post {pre_post}"
                 )
 
             # get OSM polygons
@@ -188,11 +191,14 @@ class SkyML(Backend):
             )
 
             # run xv2
-            temp_out = "~/output_temp"
+            self._make_task("docker pull 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest")
             self._make_task(
-                f"docker run --rm --shm-size 56g -v {self.remote_pre_in_dir}:/input/pre -v {self.remote_post_in_dir}:/input/post -v {temp_out}:/output -v {self.remote_poly_dir}:/input/polys --gpus all 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest --bldg_polys /input/polys/polys.geojson && mkdir {self.LOCAL_MNT}/{job_id} && cp -r {temp_out}/* {self.LOCAL_MNT}/{job_id}",
+                # Todo: currently skips using bldg_polys
+                f"docker run --rm --gpus all --shm-size 56g -v {self.remote_pre_in_dir}:/input/pre -v {self.remote_post_in_dir}:/input/post -v {self.remote_temp_out}:/output -v {self.remote_poly_dir}:/input/polys 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest --dp_mode",  # BUG: Bug in inference engine does not produce correct outputs with 4 GPUs unless run in dp_mode. Adding flag as stopgap
                 gpu=True,
             )
+            # move output to S3 mount
+            self._make_task(f"mkdir {self.LOCAL_MNT}/{job_id} && sudo cp -r {self.remote_temp_out}/* {self.LOCAL_MNT}/{job_id}")
 
         except:
             pass
@@ -213,6 +219,13 @@ class SkyML(Backend):
             gdf = gdf.to_crs(4326)
 
             gdf["geometry"] = [MultiPolygon([feature]) if isinstance(feature, Polygon) else feature for feature in gdf["geometry"]]
+
+            # if we don't have polygons, we don't get the osmid column
+            if not "osmid" in gdf.columns:
+                gdf['osmid'] = None
+
+            # get rid of extraneous columns such as 'filename' that gets created if we don't use polygons
+            gdf = gdf[['geometry', 'osmid', 'dmg', 'area', 'uid']]
 
             # Push results to Postgres
             engine = rdspostgis_sa_client()
