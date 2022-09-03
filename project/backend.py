@@ -10,6 +10,7 @@ from pathlib import Path
 from shapely.geometry import Polygon, MultiPolygon
 from utils import rdspostgis_sa_client, rdspostgis_client, update_pdb_status
 
+
 class Backend(ABC):
     def __init__(self) -> None:
         self.provider = None
@@ -103,15 +104,15 @@ class SkyML(Backend):
         self.remote_poly_dir = "/home/ubuntu/input/polys"
         self.remote_temp_out = "/home/ubuntu/output_temp"
 
-    def _make_task(self, command, gpu=False):
+    def _make_task(self, command, gpu=False, is_detach=False):
         """Wraps a command into a sky.Dag."""
-        print(command)  # Debug: remove for production
+        print(command)  # Debug: remove for production perhaps
         with sky.Dag() as dag:
             task = sky.Task(run=command)
             if gpu:
                 task.set_resources(sky.Resources(accelerators=self.ACCELERATORS))
 
-        return sky.exec(dag, cluster_name=self.cluster_name)
+        return sky.exec(dag, cluster_name=self.cluster_name, detach_run=is_detach)
 
     def get_imagery(
         self,
@@ -166,9 +167,16 @@ class SkyML(Backend):
                 idle_minutes_to_autostop=20,  # Todo: Change autostop time (used currently for debugging)
             )
 
-            # pull backend container
+            # pull containers
             self._make_task(
-                "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 316880547378.dkr.ecr.us-east-1.amazonaws.com && docker pull 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest"
+                "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 316880547378.dkr.ecr.us-east-1.amazonaws.com"
+            )
+            self._make_task(
+                "docker pull 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest",
+                is_detach=True,
+            )
+            self._make_task(
+                "docker pull 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest"
             )
 
             # get imagery
@@ -191,14 +199,15 @@ class SkyML(Backend):
             )
 
             # run xv2
-            self._make_task("docker pull 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest")
             self._make_task(
                 # Todo: currently skips using bldg_polys
                 f"docker run --rm --gpus all --shm-size 56g -v {self.remote_pre_in_dir}:/input/pre -v {self.remote_post_in_dir}:/input/post -v {self.remote_temp_out}:/output -v {self.remote_poly_dir}:/input/polys 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest --dp_mode",  # BUG: Bug in inference engine does not produce correct outputs with 4 GPUs unless run in dp_mode. Adding flag as stopgap
                 gpu=True,
             )
             # move output to S3 mount
-            self._make_task(f"mkdir {self.LOCAL_MNT}/{job_id} && sudo cp -r {self.remote_temp_out}/* {self.LOCAL_MNT}/{job_id}")
+            self._make_task(
+                f"mkdir {self.LOCAL_MNT}/{job_id} && sudo cp -r {self.remote_temp_out}/* {self.LOCAL_MNT}/{job_id}"
+            )
 
         except:
             pass
@@ -214,18 +223,23 @@ class SkyML(Backend):
                 .decode("utf-8")
             )
 
-            gdf = gpd.GeoDataFrame.from_features(json_content, crs=json_content.get('crs').get('properties').get('name'))
-            gdf['uid'] = job_id
+            gdf = gpd.GeoDataFrame.from_features(
+                json_content, crs=json_content.get("crs").get("properties").get("name")
+            )
+            gdf["uid"] = job_id
             gdf = gdf.to_crs(4326)
 
-            gdf["geometry"] = [MultiPolygon([feature]) if isinstance(feature, Polygon) else feature for feature in gdf["geometry"]]
+            gdf["geometry"] = [
+                MultiPolygon([feature]) if isinstance(feature, Polygon) else feature
+                for feature in gdf["geometry"]
+            ]
 
             # if we don't have polygons, we don't get the osmid column
             if not "osmid" in gdf.columns:
-                gdf['osmid'] = None
+                gdf["osmid"] = None
 
             # get rid of extraneous columns such as 'filename' that gets created if we don't use polygons
-            gdf = gdf[['geometry', 'osmid', 'dmg', 'area', 'uid']]
+            gdf = gdf[["geometry", "osmid", "dmg", "area", "uid"]]
 
             # Push results to Postgres
             engine = rdspostgis_sa_client()

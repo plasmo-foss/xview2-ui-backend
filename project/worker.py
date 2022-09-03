@@ -17,14 +17,14 @@ from utils import (
     order_coordinate,
     rdspostgis_client,
     rdspostgis_sa_client,
-    update_pdb_status
-    )
+    update_pdb_status,
+)
 
 STATE_START = "start"
 STATE_END = "end"
 STATE_ERROR = "error"
 STATE_UNDEFINED = "undefined"
-STATE_DELIMITER = ":" 
+STATE_DELIMITER = ":"
 
 
 celery = Celery(__name__)
@@ -33,7 +33,8 @@ celery.conf.result_backend = os.environ.get(
     "CELERY_RESULT_BACKEND", "redis://localhost:6379"
 )
 
-#conn = rdspostgis_client()
+# conn = rdspostgis_client()
+
 
 def parse_status(state):
     pieces = state.parse(STATE_DELIMITER)
@@ -60,11 +61,11 @@ def task_error_callback(request, exc, traceback, job_id):
 
 
 @celery.task(bind=True)
-def get_osm_polys(self,
-    job_id: str, out_file: str, bbox: tuple, osm_tags: dict = {"building": True}
+def get_osm_polys(
+    self, job_id: str, out_file: str, bbox: tuple, osm_tags: dict = {"building": True}
 ) -> dict:
     publish_task_status(job_id, self.request.task, STATE_START)
-    
+
     gdf = ox.geometries_from_bbox(bbox[0], bbox[1], bbox[2], bbox[3], tags=osm_tags)
 
     cols = ["geometry", "osmid"]
@@ -73,7 +74,10 @@ def get_osm_polys(self,
     gdf = gdf.loc[gdf.element_type != "node", cols]
     gdf["uid"] = job_id
 
-    gdf["geometry"] = [MultiPolygon([feature]) if isinstance(feature, Polygon) else feature for feature in gdf["geometry"]]
+    gdf["geometry"] = [
+        MultiPolygon([feature]) if isinstance(feature, Polygon) else feature
+        for feature in gdf["geometry"]
+    ]
 
     gdf.to_file(out_file)
 
@@ -104,15 +108,19 @@ def run_xv(
         poly_dict,
     )
 
+
 @celery.task(bind=True)
 def store_results(self, in_file: str, job_id: str):
     publish_task_status(job_id, self.request.task, STATE_START)
-    
+
     gdf = gpd.read_file(in_file)
-    gdf['uid'] = job_id
+    gdf["uid"] = job_id
     gdf = gdf.to_crs(4326)
 
-    gdf["geometry"] = [MultiPolygon([feature]) if isinstance(feature, Polygon) else feature for feature in gdf["geometry"]]
+    gdf["geometry"] = [
+        MultiPolygon([feature]) if isinstance(feature, Polygon) else feature
+        for feature in gdf["geometry"]
+    ]
 
     # Push results to Postgres
     engine = rdspostgis_sa_client()
@@ -121,6 +129,6 @@ def store_results(self, in_file: str, job_id: str):
     # Update job status
     conn = rdspostgis_client()
     update_pdb_status(conn, job_id, "done")
-    #publish_task_status(job_id, self.request.task, STATE_END)
+    # publish_task_status(job_id, self.request.task, STATE_END)
 
     return
