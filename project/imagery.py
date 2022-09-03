@@ -14,7 +14,7 @@ import shapely
 import rasterio.merge
 from queue import Queue
 import threading
-
+from itertools import product
 import planet.api as api
 import requests
 from pathlib import Path
@@ -446,15 +446,20 @@ class MAXARIM(Imagery):
         """
 
         # WMS requires bbox in minimum X, minimum Y, maximum X, and maximum Y
-        bounds = geometry.bounds
-        bounding_box = f"{bounds[0]},{bounds[1]},{bounds[2]},{bounds[3]}"
+        bbox = geometry.bounds
+        step = .02 # seems like a good starting point for not hitting the max MAXAR scale (1:200,000)
 
-        height, width = self.calculate_dims(bounds)
+        for x, y in product(np.arange(bbox[0], bbox[2], step), np.arange(bbox[1], bbox[3], step)):
+            
+            bounds = (x, y, x+step, y+step)
+            bounding_box = f"{x},{y},{x+step},{y+step}"
 
-        url = f"https://evwhs.digitalglobe.com/mapservice/wmsaccess?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=DigitalGlobe:Imagery&FORMAT=image/geotiff&HEIGHT={height}&WIDTH={width}&CONNECTID={self.api_key}&FEATUREPROFILE=Default_Profile&COVERAGE_CQL_FILTER=featureId='{image_id}'&CRS=EPSG:4326&BBOX={bounding_box}"
-        out_file = out_dir / f"{job_id}_{prepost}.tif"
+            height, width = self.calculate_dims(bounds)
 
-        urllib.request.urlretrieve(url, out_file)
+            url = f"https://evwhs.digitalglobe.com/mapservice/wmsaccess?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=DigitalGlobe:Imagery&FORMAT=image/geotiff&HEIGHT={height}&WIDTH={width}&CONNECTID={self.api_key}&FEATUREPROFILE=Default_Profile&COVERAGE_CQL_FILTER=featureId='{image_id}'&CRS=EPSG:4326&BBOX={bounding_box}"
+            out_file = out_dir / f"{job_id}_{x:.3f}_{y:.3f}_{prepost}.tif"
+
+            urllib.request.urlretrieve(url, out_file)
 
         return out_file
 
