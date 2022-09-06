@@ -149,7 +149,7 @@ def fetch_planet_imagery(body: FetchPlanetImagery) -> List[Dict]:
         body.current_date = datetime.now().isoformat()
 
     end_date = dateutil.parser.isoparse(body.current_date)
-    start_date = end_date - relativedelta(years=1)
+    start_date = end_date - relativedelta(years=2)
 
     converter = Imagery.get_provider(os.getenv("IMG_PROVIDER"))
 

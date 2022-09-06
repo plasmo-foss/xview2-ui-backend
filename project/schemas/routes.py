@@ -25,3 +25,4 @@ class LaunchAssessment(BaseModel):
     job_id: str = Field(None, example="73a42ed6-901b-4d08-9776-f548620e94ea")
     pre_image_id: str = Field(None, example="20220504_054637_ssc19_u0001")
     post_image_id: str = Field(None, example="20220407_120032_ssc6_u0001")
+    osm_poly: bool = Field(None)
