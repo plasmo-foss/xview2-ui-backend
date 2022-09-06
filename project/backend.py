@@ -201,7 +201,7 @@ class SkyML(Backend):
             # run xv2
             self._make_task(
                 # Todo: currently skips using bldg_polys
-                f"docker run --rm --gpus all --shm-size 56g -v {self.remote_pre_in_dir}:/input/pre -v {self.remote_post_in_dir}:/input/post -v {self.remote_temp_out}:/output -v {self.remote_poly_dir}:/input/polys 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest --dp_mode",  # BUG: Bug in inference engine does not produce correct outputs with 4 GPUs unless run in dp_mode. Adding flag as stopgap
+                f"docker run --rm --gpus all --shm-size 56g -v {self.remote_pre_in_dir}:/input/pre -v {self.remote_post_in_dir}:/input/post -v {self.remote_temp_out}:/output -v {self.remote_poly_dir}:/input/polys 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest --dp_mode --bldg_polys /input/polys/polys.geojson",  # BUG: Bug in inference engine does not produce correct outputs with 4 GPUs unless run in dp_mode. Adding flag as stopgap
                 gpu=True,
             )
 
