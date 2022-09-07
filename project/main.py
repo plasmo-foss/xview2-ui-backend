@@ -178,8 +178,8 @@ def launch_assessment(body: LaunchAssessment):
         body.job_id,
         body.pre_image_id,
         body.post_image_id,
-        get_osm=True,
         poly_dict=dict(coords),
+        get_osm=body.osm_poly,
     )
 
 
