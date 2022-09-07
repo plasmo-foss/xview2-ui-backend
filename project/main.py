@@ -2,9 +2,10 @@ import json
 import os
 import uuid
 from datetime import datetime
-from decimal import Decimal 
+from decimal import Decimal
 from typing import Dict, List
 import dateutil
+import osmnx as ox
 from dateutil.relativedelta import relativedelta
 
 import geopandas as gpd
@@ -115,28 +116,29 @@ def job_status(job_id: str) -> Dict:
         return {"uid": job_id, "status": resp}
 
 
-@app.get("/fetch-osm-polygons", response_model=OsmGeoJson)
+@app.get("/fetch-osm-polygons")
 def fetch_osm_polygons(job_id: str) -> Dict:
     # Todo: Move this work to 'utils' and point backend runner to the utils implementation
-    """
-    Returns GeoJSON for a Job ID that exists in DynamoDB.
+    coords = fetch_coordinates(job_id)
 
-        Parameters:
-            job_id (str): Job ID for a task
+    gdf = ox.geometries_from_bbox(
+        coords.start_lat,
+        coords.end_lat,
+        coords.end_lon,
+        coords.start_lon,
+        tags={"building": True},
+    )
 
-        Returns:
-            osm_geojson (dict): The FeatureCollection representing all building polygons for the bounding box
-    """
-    engine = rdspostgis_sa_client()
-    sql = f"SELECT geometry FROM xviewui_osm_polys WHERE uid='{job_id}'"
-    gdf = gpd.GeoDataFrame.from_postgis(sql, engine, geom_col="geometry")
+    cols = ["geometry", "osmid"]
+    gdf = gdf.reset_index()
 
-    geojson = json.loads(gdf.to_json())
+    # BUG: This breaks if there are no polygons
+    gdf = gdf.loc[gdf.element_type != "node", cols]
 
-    if len(geojson["features"]) == 0:
-        return None
+    if gdf is not None:
+        return json.loads(gdf.to_json())
     else:
-        return {"uid": job_id, "geojson": geojson}
+        return None
 
 
 @app.post("/fetch-planet-imagery", response_model=Planet)
@@ -182,7 +184,6 @@ def launch_assessment(body: LaunchAssessment):
         get_osm=body.osm_poly,
     )
 
-
     # Update job status
     update_pdb_status(conn, body.job_id, "running_assessment")
 
@@ -193,7 +194,6 @@ def launch_assessment(body: LaunchAssessment):
 
 @app.get("/fetch-assessment")
 def fetch_assessment(job_id: str):
-
     def default_type_error_handler(obj):
         if isinstance(obj, Decimal):
             return float(obj)
@@ -207,7 +207,8 @@ def fetch_assessment(job_id: str):
     if gdf is not None:
         return json.loads(gdf.to_json())
     else:
-        return None    
+        return None
+
 
 # No longer works but this is how we should call our chain/chord
 # @app.get("/test-celery")
