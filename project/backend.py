@@ -124,19 +124,20 @@ class SkyML(Backend):
         poly_dict: dict,
         pre_post: str,
     ):
-        # get imagery
-        for pre_post in ["pre", "post"]:
+        # # get imagery
+        # for pre_post in ["pre", "post"]:
 
-            if pre_post == "pre":
-                img_id = self.pre_image_id
-                remote_dir = self.remote_pre_in_dir
-            else:
-                img_id = self.post_image_id
-                remote_dir = self.remote_post_in_dir
+        #     if pre_post == "pre":
+        #         img_id = self.pre_image_id
+        #         remote_dir = self.remote_pre_in_dir
+        #     else:
+        #         img_id = self.post_image_id
+        #         remote_dir = self.remote_post_in_dir
 
-            self._make_task(
-                f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --pre_post {pre_post}"
-            )
+        #     self._make_task(
+        #         f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest python backend_runner.py imagery --provider {img_provider} --api_key {os.getenv('PLANET_API_KEY')} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --pre_post {pre_post}"
+        #     )
+        pass
 
     def launch(
         self,
@@ -190,18 +191,18 @@ class SkyML(Backend):
                     remote_dir = self.remote_post_in_dir
 
                 self._make_task(
-                    f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py imagery --provider {img_provider} --api_key {img_api_key} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --pre_post {pre_post}"
+                    f"docker run --rm -v {remote_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest python backend_runner.py imagery --provider {img_provider} --api_key {img_api_key} --job_id {job_id} --image_id {img_id} --coordinates '{json.dumps(poly_dict)}' --out_path /output --pre_post {pre_post}"
                 )
 
             # get OSM polygons
             self._make_task(
-                f"docker run --rm -v {self.remote_poly_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest conda run -n xv2_backend python backend_runner.py fetch_polys --job_id {job_id} --coordinates '{json.dumps(poly_dict)}'"
+                f"docker run --rm -v {self.remote_poly_dir}:/output 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-backend:latest python backend_runner.py fetch_polys --job_id {job_id} --coordinates '{json.dumps(poly_dict)}'"
             )
 
             # run xv2
             self._make_task(
                 # Todo: currently skips using bldg_polys
-                f"docker run --rm --gpus all --shm-size 56g -v {self.remote_pre_in_dir}:/input/pre -v {self.remote_post_in_dir}:/input/post -v {self.remote_temp_out}:/output -v {self.remote_poly_dir}:/input/polys 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest --dp_mode --bldg_polys /input/polys/polys.geojson",  # BUG: Bug in inference engine does not produce correct outputs with 4 GPUs unless run in dp_mode. Adding flag as stopgap
+                f"docker run --rm --gpus all --shm-size 56g -v {self.remote_pre_in_dir}:/input/pre -v {self.remote_post_in_dir}:/input/post -v {self.remote_temp_out}:/output -v {self.remote_poly_dir}:/input/polys 316880547378.dkr.ecr.us-east-1.amazonaws.com/xv2-inf-engine:latest --dp_mode",  # BUG: Bug in inference engine does not produce correct outputs with 4 GPUs unless run in dp_mode. Adding flag as stopgap
                 gpu=True,
             )
 
