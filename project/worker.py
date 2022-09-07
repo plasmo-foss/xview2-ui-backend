@@ -93,7 +93,11 @@ def get_osm_polys(
 
 @celery.task()
 def run_xv(
-    job_id: str, pre_image_id: str, post_image_id: str, get_osm: bool, poly_dict: dict
+    job_id: str,
+    pre_image_id: str,
+    post_image_id: str,
+    poly_dict: dict,
+    get_osm: bool = False,
 ) -> None:
 
     b_end = Backend.get_backend(os.getenv("BACKEND"))
@@ -106,6 +110,7 @@ def run_xv(
         os.getenv("IMG_PROVIDER"),
         im_provider.api_key,
         poly_dict,
+        get_osm,
     )
 
 
