@@ -238,9 +238,11 @@ class Imagery(ABC):
             list: list of dictionaries containing timestamp, item_id, item_type, provider, and url
         """
 
-        timestamps, images, urls = self.get_imagery_list(geometry, start_date, end_date)
+        timestamps, images, urls, extra = self.get_imagery_list(
+            geometry, start_date, end_date
+        )
 
-        return [
+        result = [
             {
                 "timestamp": i[0],
                 "item_type": self.item_type,
@@ -248,9 +250,13 @@ class Imagery(ABC):
                 "provider": self.provider,
                 "return_type": self.return_type,
                 "url": i[2],
+                "extra": extra,
             }
             for i in zip(timestamps, images, urls)
         ]
+        
+        return result
+
 
     def download_imagery_helper(
         self,
@@ -292,7 +298,7 @@ class Imagery(ABC):
             end_date (str): end date to search for imagery
 
         Returns:
-            tuple: tuple of three lists of timestamps, image_ids, and urls
+            tuple: tuple of four lists of timestamps, image_ids, urls, and extra (in the event a provider needs to provide additional data)
         """
         pass
 
@@ -336,7 +342,6 @@ class MAXARIM(Imagery):
         self.item_type = "DG_Feature"
         self.return_type = RASTER
 
-
     def calculate_dims(self, coords: tuple, res: float = 0.5) -> tuple:
         """Calculates height and width of raster given bounds and resolution
 
@@ -347,6 +352,7 @@ class MAXARIM(Imagery):
         Returns:
             tuple: height/width of raster
         """
+        # TODO: when called, the original resolution should be passed to
         dims = calculate_default_transform(
             CRS({"init": "EPSG:4326"}),
             CRS({"init": "EPSG:3587"}),
@@ -360,6 +366,21 @@ class MAXARIM(Imagery):
         )
         return (dims[1], dims[2])
 
+    def get_chip_dims(self, bbox, step=0.02):
+        dims = []
+
+        for x, y in product(
+            np.arange(bbox[0], bbox[2], step), np.arange(bbox[1], bbox[3], step)
+        ):
+            bounds = (x, y, x + step, y + step)
+            # WMS requires bbox in minimum X, minimum Y, maximum X, and maximum Y
+            bounding_box = f"{x},{y},{x+step},{y+step}"
+
+            height, width = self.calculate_dims(bounds)
+
+            dims.append({"height": height, "width": width, "bbox": bounding_box})
+
+        return dims
 
     def get_imagery_list(
         self, geometry: Polygon, start_date: str, end_date: str
@@ -405,6 +426,7 @@ class MAXARIM(Imagery):
         resp = requests.get(BASE_URL, params=params)
         result = xmltodict.parse(resp.text)
 
+        # BUG: This fails if there is only one imagery set returned
         timestamps = [
             i["DigitalGlobe:acquisitionDate"]
             for i in result["wfs:FeatureCollection"]["gml:featureMembers"][
@@ -424,15 +446,12 @@ class MAXARIM(Imagery):
             ]
         ]
 
-        return timestamps, images, urls
+        extra = {"chips": [i for i in self.get_chip_dims(bounds)]}
+
+        return timestamps, images, urls, extra
 
     def download_imagery(
-        self,
-        job_id: str,
-        prepost: str,
-        image_id: str,
-        geometry: Polygon,
-        out_dir: str,
+        self, job_id: str, prepost: str, image_id: str, geometry: Polygon, out_dir: str,
     ) -> bool:
         """
         Take in the URL for a tile server and save the raster to disk
@@ -445,19 +464,10 @@ class MAXARIM(Imagery):
             ret_counter (int): how many tiles failed to download
         """
 
-        # WMS requires bbox in minimum X, minimum Y, maximum X, and maximum Y
-        bbox = geometry.bounds
-        step = .02 # seems like a good starting point for not hitting the max MAXAR scale (1:200,000)
+        for img in self.get_chip_dims(geometry.bounds):
 
-        for x, y in product(np.arange(bbox[0], bbox[2], step), np.arange(bbox[1], bbox[3], step)):
-            
-            bounds = (x, y, x+step, y+step)
-            bounding_box = f"{x},{y},{x+step},{y+step}"
-
-            height, width = self.calculate_dims(bounds)
-
-            url = f"https://evwhs.digitalglobe.com/mapservice/wmsaccess?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=DigitalGlobe:Imagery&FORMAT=image/geotiff&HEIGHT={height}&WIDTH={width}&CONNECTID={self.api_key}&FEATUREPROFILE=Default_Profile&COVERAGE_CQL_FILTER=featureId='{image_id}'&CRS=EPSG:4326&BBOX={bounding_box}"
-            out_file = out_dir / f"{job_id}_{x:.3f}_{y:.3f}_{prepost}.tif"
+            url = f"https://evwhs.digitalglobe.com/mapservice/wmsaccess?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=DigitalGlobe:Imagery&FORMAT=image/geotiff&HEIGHT={img['height']}&WIDTH={img['width']}&CONNECTID={self.api_key}&FEATUREPROFILE=Default_Profile&COVERAGE_CQL_FILTER=featureId='{image_id}'&CRS=EPSG:4326&BBOX={img['bbox']}"
+            out_file = out_dir / f"{job_id}_{img['bbox']}_{prepost}.tif"
 
             urllib.request.urlretrieve(url, out_file)
 
@@ -501,7 +511,7 @@ class PlanetIM(Imagery):
             i["_links"]["assets"] for i in items
         ]  # Todo: this is not the url to the resource...just to the endpoint to get the url(s)
 
-        return timestamps, images, urls
+        return timestamps, images, urls, None
 
     def download_imagery(
         self,

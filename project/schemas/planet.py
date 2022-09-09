@@ -14,7 +14,8 @@ class Planet(BaseModel):
                 "item_id": "20220407_120032_ssc6_u0001",
                 "provider": "Planet",
                 "return_type": "tileset",
-                "url": "https://tile{1-3}...."
+                "url": "https://tile{1-3}....",
+                "extra": "extra data provider may need"
             },
             {
                 "timestamp": "2022-04-04T11:57:06Z",
@@ -22,7 +23,8 @@ class Planet(BaseModel):
                 "item_id": "20220404_083931_ssc4_u0001",
                 "provider": "MAXAR",
                 "return_type": "raster",
-                "url": "Leaflet/Deck.gl compatible url"
+                "url": "Leaflet/Deck.gl compatible url",
+                "extra": "extra data provider may need"
             },
         ],
     )
