@@ -366,7 +366,7 @@ class MAXARIM(Imagery):
         )
         return (dims[1], dims[2])
 
-    def get_chip_dims(self, bbox, step=0.02):
+    def get_chip_dims(self, bbox, step=0.02, res=.5):
         dims = []
 
         for x, y in product(
@@ -376,7 +376,7 @@ class MAXARIM(Imagery):
             # WMS requires bbox in minimum X, minimum Y, maximum X, and maximum Y
             bounding_box = f"{x},{y},{x+step},{y+step}"
 
-            height, width = self.calculate_dims(bounds)
+            height, width = self.calculate_dims(bounds, res=res)
 
             dims.append({"height": height, "width": width, "bbox": bounding_box})
 
@@ -446,7 +446,7 @@ class MAXARIM(Imagery):
             ]
         ]
 
-        extra = {"chips": [i for i in self.get_chip_dims(bounds)]}
+        extra = {"chips": [i for i in self.get_chip_dims(bounds, step=.005, res=.75)]}
 
         return timestamps, images, urls, extra
 
