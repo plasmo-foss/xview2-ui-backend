@@ -5,6 +5,7 @@ import os
 import urllib.request
 import xmltodict
 import mercantile
+from tqdm import tqdm
 
 # Todo: find replacement for cv2...it seems to break every environment! When replacement is found remove line in Dockerfile
 import cv2
@@ -464,7 +465,7 @@ class MAXARIM(Imagery):
             ret_counter (int): how many tiles failed to download
         """
 
-        for img in self.get_chip_dims(geometry.bounds):
+        for img in tqdm(self.get_chip_dims(geometry.bounds)):
 
             url = f"https://evwhs.digitalglobe.com/mapservice/wmsaccess?SERVICE=WMS&REQUEST=GetMap&VERSION=1.1.1&LAYERS=DigitalGlobe:Imagery&FORMAT=image/geotiff&HEIGHT={img['height']}&WIDTH={img['width']}&CONNECTID={self.api_key}&FEATUREPROFILE=Default_Profile&COVERAGE_CQL_FILTER=featureId='{image_id}'&CRS=EPSG:4326&BBOX={img['bbox']}"
             out_file = out_dir / f"{job_id}_{img['bbox']}_{prepost}.tif"
