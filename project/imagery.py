@@ -406,7 +406,7 @@ class MAXARIM(Imagery):
         # WFS requires bbox minimum Y, minimum X, maximum Y, and maximum X
         bounding_box = f"{bounds[1]},{bounds[0]},{bounds[3]},{bounds[2]}"
         CQL_QUERY = [
-            {"key": "cloudCover", "value": "<0.10", "type": "inequality"},
+            {"key": "cloudCover", "value": "<0.30", "type": "inequality"},
             {"key": "formattedDate", "value": f">'{start_date}'", "type": "inequality"},
             {"key": "BBOX", "value": f"geometry,{bounding_box}", "type": "compound"},
         ]
@@ -524,7 +524,7 @@ class PlanetIM(Imagery):
     ) -> str:
 
         subdomains = ["tiles0", "tiles1", "tiles2", "tiles3"]
-        url = f"https://tiles0.planet.com/data/v1/SkySatCollect/{image_id}/{{z}}/{{x}}/{{y}}.png?api_key={self.api_key}"
+        url = f"https://{{subdomain}}.planet.com/data/v1/SkySatCollect/{image_id}/{{z}}/{{x}}/{{y}}.png?api_key={self.api_key}"
 
         ds = TileDataset(url, out_dir, geometry, 18, job_id)
 
